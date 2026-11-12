@@ -81,7 +81,11 @@ fn main() {
         "clang",
         &format!(
             "--print-file-name=libclang_rt.{}.a",
-            if platform == "iphoneos" { "ios" } else { "iossim" }
+            if platform == "iphoneos" {
+                "ios"
+            } else {
+                "iossim"
+            }
         ),
     ]);
     println!("cargo:rustc-link-arg-bins={clang_rt}");

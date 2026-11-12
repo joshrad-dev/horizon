@@ -81,6 +81,10 @@ impl Loading {
     /// the title is on the screen holds the title back by that build. Wait for
     /// one title frame first, unless a world is waiting to open.
     pub(super) fn ready_for_handoff(&self) -> bool {
+        // The launcher hands over only after Play.
+        if self.menu.launcher.as_ref().is_some_and(|l| !l.launched) {
+            return false;
+        }
         self.title_drawn
             || self.menu.pending.is_some()
             || self.ui_at.is_none_or(|at| at.elapsed() >= TITLE_FRAME_WAIT)
@@ -254,6 +258,7 @@ impl Loading {
             return;
         }
         self.poll_menu_realms(event_loop);
+        self.launcher_frame();
         self.hardware_input(event_loop);
         if let Some(w) = &self.window {
             if self.options.as_ref().is_some_and(|o| o.offscreen) {

@@ -77,6 +77,8 @@ pub(super) struct Options {
     pub(super) session_file: Option<String>,
     /// `--session-stdin`: the session file's JSON comes on standard input instead.
     pub(super) session_stdin: bool,
+    /// `--launcher`: open on the launcher (`game/launcher.rs`), the iOS app's, before the title.
+    pub(super) launcher: bool,
 }
 
 impl Options {
@@ -223,6 +225,7 @@ impl Options {
             quick_play: None,
             session_file: std::env::var("HORIZON_SESSION_FILE").ok(),
             session_stdin: false,
+            launcher: false,
         };
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -239,6 +242,7 @@ impl Options {
                 }
                 "--fullscreen" => o.fullscreen = true,
                 "--session-stdin" => o.session_stdin = true,
+                "--launcher" => o.launcher = true,
                 "--dedicated" => {
                     o.execution_role = execution_role::ExecutionRole::DedicatedServer;
                     o.dedicated = Some(args.by_ref().collect());

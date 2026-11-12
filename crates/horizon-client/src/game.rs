@@ -230,6 +230,7 @@ mod lan_vehicles;
 mod lan_waypoints;
 mod launch_api;
 mod launch_options;
+mod launcher;
 mod leads;
 mod legacy_rules;
 mod level_particles;

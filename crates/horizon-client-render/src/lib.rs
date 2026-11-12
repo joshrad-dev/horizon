@@ -67,6 +67,8 @@ pub mod java_text;
 mod jei_sprites;
 pub mod jigsaw_block;
 pub mod keypad;
+pub mod launcher_ui;
+pub mod msa;
 pub mod terrain_model;
 pub use horizon_polytone::creative_tabs as polytone_creative_tabs;
 pub use horizon_world::json_folder;

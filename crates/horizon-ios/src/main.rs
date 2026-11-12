@@ -45,6 +45,8 @@ fn main() {
         game_dir.display().to_string(),
         "--home".to_owned(),
         horizon_home.display().to_string(),
+        // The app opens on the launcher: Play, the account, the controls and the library.
+        "--launcher".to_owned(),
     ];
     #[cfg(target_os = "ios")]
     horizon_client_input::window::install_display_shape(display::shape);

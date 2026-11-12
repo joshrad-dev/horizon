@@ -1233,6 +1233,9 @@ const NATIVE_KEY: &str = "horizon.nativeModKey";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
     Main,
+    /// The launcher the iOS app opens on (`launcher_ui`): Play, the account, the controls and
+    /// the library, before the title.
+    Launcher,
     Video,
     Sound,
     Controls,
@@ -1588,6 +1591,8 @@ pub struct OptionsUi {
     controller: shell::Shell<crate::controller_ui::ControllerScreen>,
     /// Horizon Extras, on the settings shell.
     extras: shell::Shell<crate::extras_ui::ExtrasScreen>,
+    /// The launcher (`launcher_ui`), on the settings shell.
+    pub(crate) launcher: shell::Shell<crate::launcher_ui::LauncherScreen>,
     /// The radial menu's pages, on the settings shell.
     radial: shell::Shell<crate::radial_editor::RadialScreen>,
     /// The list of actions for one of the radial menu's slots.
@@ -1676,6 +1681,7 @@ impl Default for OptionsUi {
             graphics: Default::default(),
             controller: Default::default(),
             extras: Default::default(),
+            launcher: Default::default(),
             radial: Default::default(),
             radial_pick: Default::default(),
             shader: Default::default(),
@@ -2140,6 +2146,7 @@ impl OptionsUi {
     fn title(page: Page) -> &'static str {
         match page {
             Page::Main => "options.title",
+            Page::Launcher => "horizon.launcher",
             Page::Video => "options.videoTitle",
             Page::Sound => "options.sounds.title",
             Page::Skin => "options.skinCustomisation.title",

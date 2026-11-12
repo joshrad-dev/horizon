@@ -18,6 +18,7 @@ impl OptionsUi {
     pub(super) fn shell(&self) -> Option<&dyn shell::Hosted> {
         match self.page() {
             Page::Extras => Some(&self.extras),
+            Page::Launcher => Some(&self.launcher),
             page if Self::graphics_page(page).is_some() => Some(&self.graphics),
             Page::ControllerRadial => Some(&self.radial),
             Page::ControllerRadialPick => Some(&self.radial_pick),
@@ -30,6 +31,7 @@ impl OptionsUi {
         self.graphics.screen.output = self.output;
         match self.page() {
             Page::Extras => Some(&mut self.extras),
+            Page::Launcher => Some(&mut self.launcher),
             page if Self::graphics_page(page).is_some() => Some(&mut self.graphics),
             Page::ControllerRadial => Some(&mut self.radial),
             Page::ControllerRadialPick => Some(&mut self.radial_pick),
@@ -53,8 +55,9 @@ impl OptionsUi {
             return;
         }
         // Every shell: the click may have changed the page.
-        let shells: [&mut dyn shell::Hosted; 6] = [
+        let shells: [&mut dyn shell::Hosted; 7] = [
             &mut self.extras,
+            &mut self.launcher,
             &mut self.graphics,
             &mut self.controller,
             &mut self.radial,
@@ -101,6 +104,14 @@ impl OptionsUi {
                     self.selected_pad_action = Some(action)
                 }
                 shell::Output::Push(page) => {
+                    // What the Options buttons that open these pages ask of the game too.
+                    if page == Page::ShaderPacks {
+                        s.shader_options = None;
+                        events.extend([Event::ListShaderPacks, Event::OpenShaderOptions]);
+                    }
+                    if page == Page::ModBrowser {
+                        events.push(Event::BrowseMods);
+                    }
                     if page == Page::HdrCalibration {
                         self.calibration =
                             Some(crate::hdr_calibration::Calibration::new(s, &self.output));
@@ -113,6 +124,13 @@ impl OptionsUi {
                         let row = self.radial_pick.screen.open_on(at, &s.controller.radial);
                         self.radial_pick.focus_soon(row);
                     }
+                }
+                // The launcher's foot is Play: it stays open until the game takes over.
+                shell::Output::Done if self.page() == Page::Launcher => {
+                    self.launcher
+                        .screen
+                        .actions
+                        .push(crate::launcher_ui::Action::Play);
                 }
                 shell::Output::Done => {
                     // Back from a slot's list, the focus is on the slot.

@@ -13,8 +13,8 @@ use winit::{event::KeyEvent, keyboard::ModifiersState};
 #[derive(Default)]
 pub(super) struct StartupMenu {
     title: Option<Title>,
-    options: OptionsUi,
-    options_open: bool,
+    pub(super) options: OptionsUi,
+    pub(super) options_open: bool,
     /// The credits from Credits & Attribution, and their last frame.
     win: Option<(horizon_client::win_screen::WinScreen, Instant)>,
     root: PathBuf,
@@ -22,7 +22,7 @@ pub(super) struct StartupMenu {
     pointer: (f64, f64),
     modifiers: ModifiersState,
     physical_keys: HashSet<KeyCode>,
-    dragging: bool,
+    pub(super) dragging: bool,
     clipboard: SystemClipboard,
     selection: AppendSelection,
     /// The narrator's `NARRATOR_TOGGLE` toast, handed to the game with the title.
@@ -53,6 +53,8 @@ pub(super) struct StartupMenu {
     pub reload_packs: bool,
     /// Browse mods' worker (`mod_browser`).
     mod_jobs: super::mod_browser::Jobs,
+    /// The launcher over the title, until Play (`--launcher`).
+    pub(super) launcher: Option<super::launcher::LauncherHost>,
     pub perf: horizon_client::telemetry::Session,
 }
 
@@ -90,6 +92,8 @@ impl StartupMenu {
         }
         if menu.pending.is_some() {
             menu.perf.world_opening();
+        } else if options.launcher {
+            menu.launcher = Some(super::launcher::LauncherHost::new());
         }
         Ok(menu)
     }
@@ -530,7 +534,7 @@ impl Loading {
         self.settings.save(&Game::options_path());
     }
 
-    fn open_menu_options(&mut self, page: Page) {
+    pub(super) fn open_menu_options(&mut self, page: Page) {
         self.menu.options.open_at(false, page);
         self.menu.options.languages = horizon_client::lang::available(&[&self.menu.root]);
         self.menu.options.pack_infos = packs::pack_infos(&self.vanilla_root, &[]);

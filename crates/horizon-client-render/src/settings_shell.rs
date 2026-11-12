@@ -1357,6 +1357,10 @@ pub(crate) trait Screen {
     type Row: Copy + PartialEq;
     /// The language key of the name under the mark.
     fn title(&self) -> &'static str;
+    /// The language key of the foot's last button (the launcher's is Play).
+    fn done_label(&self) -> &'static str {
+        DONE
+    }
     /// The lines of description the strip should hold.
     fn note_lines(&self) -> usize {
         NOTE_LINES
@@ -2400,7 +2404,7 @@ impl<S: Screen + Default> Hosted for Shell<S> {
             let (label, declared, primary) = match target {
                 Target::Undo => (UNDO, (!self.pending).then_some(Declared::Apply), false),
                 Target::Apply => (APPLY, Some(Declared::Apply), true),
-                _ => (DONE, Some(Declared::Done), true),
+                _ => (self.screen.done_label(), Some(Declared::Done), true),
             };
             let label = Text::literal(lang::get(label));
             let flags = (self.shows_focus(target), primary);
