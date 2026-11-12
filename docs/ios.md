@@ -29,12 +29,34 @@ cargo build --profile fast -p horizon-prepare
 tools/ios/build_app.sh --install <simulator UDID>
 ```
 
-`tools/ios/build_app.sh` builds `horizon-ios` with `--profile fast`, assembles
-`target/ios/<target>/Horizon.app` (the executable, `Info.plist` from `crates/horizon-ios`, and the
-resources under `GameData/`), and signs it ad hoc. `NO_SOUNDS=1` leaves the 380 MB of sounds out.
+`tools/ios/build_app.sh` builds `horizon-ios` with `--profile fast` (`PROFILE=release` for a
+build to keep), assembles `target/ios/<target>/Horizon.app` (the executable, `Info.plist` from
+`crates/horizon-ios`, and the resources under `GameData/`), and signs it ad hoc. A release build
+ships a stripped executable and leaves the unstripped one beside the app
+(`horizon-ios.unstripped`), for `atos -o` to read crash reports with.
 
 For a device: `tools/ios/build_app.sh --device --sign "Apple Development: …" --profile
-path/to/profile.mobileprovision`, then install with Xcode's Devices window or `xcrun devicectl`.
+path/to/profile.mobileprovision [--entitlements app.entitlements]` (`BUILD_NUMBER` sets
+`CFBundleVersion`), then install with Xcode's Devices window or `xcrun devicectl`.
+
+### The app's resources, small
+
+The prepared folder is 685 MB; the app ships about 220 MB of it (`tools/ios/stage_resources.py`,
+which needs `brew install vorbis-tools`):
+
+- **Packed**: every file but the sounds goes into one `horizon-data.bin` (version 3 of
+  `crates/horizon-core/src/prepared_files.rs`), each zstd-compressed at level 19
+  (`cargo run -p xtask -- ios-pack`): 150 MB of JSON and NBT in 20 MB, without the 88 MB the
+  folder's 22,000 small files lose to the file system. The game reads through
+  `horizon_core::resource_fs`, which is `std::fs` everywhere but under a packed folder (and a
+  resource packs' mirror over one, `prepared_files::open_overlay`). Code reading the prepared
+  folder or a pack's folder reads with it.
+- **Languages**: English alone of vanilla's 142 lang files (85 MB). The others are fetched from
+  Mojang's asset server the first time a player picks one, by the hash in `asset-index.json`, and
+  kept in the app's caches (`crates/horizon-ios/src/languages.rs`). `LANGUAGES=en_us,fr_fr` ships
+  more.
+- **Sounds**: re-encoded to Ogg Vorbis at `oggenc -q 0` (`SOUND_QUALITY`) and at most 48 kHz:
+  359 MB to 198 MB, music the most. `NO_SOUNDS=1` leaves them out.
 
 On the device the game folder (saves, `options.txt`) is `Documents/Horizon` and the log and
 crash reports are in `Documents/Horizon/.horizon`; the Files app shows them.

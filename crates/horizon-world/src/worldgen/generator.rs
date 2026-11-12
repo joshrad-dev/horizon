@@ -55,7 +55,7 @@ use serde_json::Value;
 use std::{
     any::Any,
     collections::{BTreeMap, BTreeSet, HashMap},
-    fs, io,
+    io,
     path::Path,
     sync::{Arc, Mutex, OnceLock},
 };
@@ -230,8 +230,8 @@ fn read_bundle(
     name: &str,
 ) -> Result<Bundle, GeneratorError> {
     let path = dir.join(format!("{name}.json"));
-    let text =
-        fs::read_to_string(&path).map_err(|e| resource(format!("{}: {e}", path.display())))?;
+    let text = horizon_core::resource_fs::read_to_string(&path)
+        .map_err(|e| resource(format!("{}: {e}", path.display())))?;
     Ok(overrides.apply(name, serde_json::from_str(&text)?))
 }
 fn read_optional_bundle(
@@ -239,7 +239,7 @@ fn read_optional_bundle(
     overrides: &WorldgenOverrides,
     name: &str,
 ) -> Result<Option<Bundle>, GeneratorError> {
-    if dir.join(format!("{name}.json")).exists() {
+    if horizon_core::resource_fs::exists(dir.join(format!("{name}.json"))) {
         read_bundle(dir, overrides, name).map(Some)
     } else {
         Ok(None)
@@ -368,8 +368,9 @@ impl GeneratorData {
         ov: &WorldgenOverrides,
     ) -> Result<Arc<Self>, GeneratorError> {
         let mut warnings = Vec::new();
-        let flags: Vec<(bool, bool)> =
-            serde_json::from_str(&fs::read_to_string(dir.join("block_flags.json"))?)?;
+        let flags: Vec<(bool, bool)> = serde_json::from_str(
+            &horizon_core::resource_fs::read_to_string(dir.join("block_flags.json"))?,
+        )?;
         if flags.len() != registry.len() {
             return Err(resource("block_flags.json does not match the registry"));
         }
@@ -404,7 +405,9 @@ impl GeneratorData {
         let structures = loading({
             let (dir, tags, ov) = (dir.to_owned(), block_tags.clone(), ov.clone());
             move || -> Result<_, GeneratorError> {
-                let Ok(json) = fs::read_to_string(dir.join("blocks/structure-blocks.json")) else {
+                let Ok(json) = horizon_core::resource_fs::read_to_string(
+                    dir.join("blocks/structure-blocks.json"),
+                ) else {
                     return Ok(None);
                 };
                 Ok(Some(Arc::new(
@@ -422,9 +425,11 @@ impl GeneratorData {
         let behaviours = loading({
             let root = dir.parent().map(Path::to_owned);
             move || {
-                root.filter(|root| root.join("block-behaviours.json").exists())
-                    .and_then(|root| crate::level::Behaviours::load(registry, &root).ok())
-                    .map(Arc::new)
+                root.filter(|root| {
+                    horizon_core::resource_fs::exists(root.join("block-behaviours.json"))
+                })
+                .and_then(|root| crate::level::Behaviours::load(registry, &root).ok())
+                .map(Arc::new)
             }
         })?;
         let tag_set = |name: &str| -> Result<BTreeSet<&str>, GeneratorError> {
@@ -466,8 +471,8 @@ impl GeneratorData {
         )?;
         let mut presets = read_optional_bundle(dir, ov, "presets")?.unwrap_or_default();
         let reports = dir.join("biome_parameters");
-        if reports.is_dir() {
-            for entry in fs::read_dir(&reports)? {
+        if horizon_core::resource_fs::is_dir(&reports) {
+            for entry in horizon_core::resource_fs::read_dir(&reports)? {
                 let path = entry?.path();
                 let Some(stem) = path
                     .file_stem()
@@ -478,7 +483,9 @@ impl GeneratorData {
                 };
                 presets
                     .entry(format!("minecraft:{stem}"))
-                    .or_insert(quantize_parameter_report(&fs::read_to_string(&path)?)?);
+                    .or_insert(quantize_parameter_report(
+                        &horizon_core::resource_fs::read_to_string(&path)?,
+                    )?);
             }
         }
         let source_catalog =

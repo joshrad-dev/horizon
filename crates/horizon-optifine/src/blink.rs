@@ -10,7 +10,6 @@
 //! Written from ETF's README ("Blinking textures"); no mod's source was read.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use crate::paths::files_under;
@@ -40,7 +39,7 @@ pub struct Blink {
 impl Blinks {
     pub fn scan(root: &Path, random: &RandomTextures) -> Self {
         let mut out = Self::default();
-        let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+        let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
             return out;
         };
         for ns in namespaces.flatten() {
@@ -48,7 +47,7 @@ impl Blinks {
             let prefix = format!("assets/{ns}/");
             for file in files_under(root, &format!("{prefix}textures/entity"), &["_blink.png"]) {
                 let stem = &file[..file.len() - "_blink.png".len()];
-                if root.join(format!("{stem}.png")).is_file() {
+                if horizon_core::resource_fs::is_file(root.join(format!("{stem}.png"))) {
                     let blink =
                         Blink::read(root, stem, |path| atlas_name(&ns, &path[prefix.len()..]));
                     out.blinks
@@ -60,7 +59,7 @@ impl Blinks {
             let Some(stem) = file.strip_suffix(".png") else {
                 continue;
             };
-            if !root.join(format!("{stem}_blink.png")).is_file() {
+            if !horizon_core::resource_fs::is_file(root.join(format!("{stem}_blink.png"))) {
                 continue;
             }
             let frame = |path: &str| format!("{name}{}", &path[stem.len()..]);
@@ -96,9 +95,11 @@ impl Blink {
     /// The blink of the texture at `stem` (its path from the root, no `.png`); `name` gives a
     /// frame's atlas name from its path.
     fn read(root: &Path, stem: &str, name: impl Fn(&str) -> String) -> Self {
-        let props = fs::read_to_string(root.join(format!("{stem}_blink.properties")))
-            .map(|text| Properties::parse(&text))
-            .unwrap_or_default();
+        let props = horizon_core::resource_fs::read_to_string(
+            root.join(format!("{stem}_blink.properties")),
+        )
+        .map(|text| Properties::parse(&text))
+        .unwrap_or_default();
         let number = |key, default| {
             props
                 .get(key)
@@ -110,9 +111,7 @@ impl Blink {
         let half = format!("{stem}_blink2");
         Self {
             shut: name(&format!("{stem}_blink")),
-            half: root
-                .join(format!("{half}.png"))
-                .is_file()
+            half: horizon_core::resource_fs::is_file(root.join(format!("{half}.png")))
                 .then(|| name(&half)),
             length,
             frequency: number("blinkFrequency", FREQUENCY).max(length + 1),
@@ -141,11 +140,11 @@ mod tests {
     fn pack(name: &str, files: &[(&str, &str)]) -> (std::path::PathBuf, Blinks) {
         let root =
             std::env::temp_dir().join(format!("horizon-blink-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         for (path, text) in files {
             let path = root.join(path);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let b = Blinks::scan(&root, &RandomTextures::scan(&root));
         (root, b)
@@ -192,7 +191,7 @@ mod tests {
         );
         assert_eq!(pig.frame(0, 0), Some("entity/pig/pig_blink"));
         assert!(b.get("entity/cow/cow").is_none());
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -220,7 +219,7 @@ mod tests {
                 format!("{variant}_blink").as_str()
             )]
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -239,6 +238,6 @@ mod tests {
         let pig = b.get("entity/pig/pig").unwrap();
         assert_eq!((pig.length, pig.frequency), (u32::MAX - 1, u32::MAX));
         assert_eq!(pig.frame(u32::MAX - 1, 0), None, "the one open tick");
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 }

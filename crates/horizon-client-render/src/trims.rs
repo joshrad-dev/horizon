@@ -7,7 +7,7 @@
 //! palette (iron armour with an iron trim uses `trim/iron_darker`).
 use horizon_assets::palette::apply_palette;
 use serde_json::Value;
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, path::Path};
 
 /// Runtime trim slots and the completed ordered requests for their current atlas.
 /// A frame with more requests than slots keeps the same final residents as the
@@ -173,7 +173,7 @@ impl TrimRegistry {
     /// Every `data/<namespace>/trim_pattern` and `trim_material` entry.
     pub fn load(root: &Path) -> Self {
         let mut out = Self::default();
-        let Ok(namespaces) = fs::read_dir(root.join("data")) else {
+        let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("data")) else {
             return out;
         };
         for ns in namespaces.flatten() {
@@ -182,7 +182,7 @@ impl TrimRegistry {
                 ("trim_pattern", "asset_id", &mut out.patterns),
                 ("trim_material", "palette_id", &mut out.materials),
             ] {
-                let Ok(files) = fs::read_dir(ns.path().join(folder)) else {
+                let Ok(files) = horizon_core::resource_fs::read_dir(ns.path().join(folder)) else {
                     continue;
                 };
                 for f in files.flatten() {
@@ -190,7 +190,7 @@ impl TrimRegistry {
                     if path.extension().is_none_or(|e| e != "json") {
                         continue;
                     }
-                    let Some(value) = fs::read(&path)
+                    let Some(value) = horizon_core::resource_fs::read(&path)
                         .ok()
                         .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
                     else {
@@ -314,15 +314,21 @@ fn argb(rgba: &[u8]) -> Vec<u32> {
 /// slots), at least vanilla's 64x32.
 pub fn slot_size(root: &Path) -> (u32, u32) {
     let mut size = (64, 32);
-    let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
         return size;
     };
     for ns in namespaces.flatten() {
-        let Ok(layers) = fs::read_dir(ns.path().join("textures/trims/entity")) else {
+        let Ok(layers) =
+            horizon_core::resource_fs::read_dir(ns.path().join("textures/trims/entity"))
+        else {
             continue;
         };
         for layer in layers.flatten() {
-            for f in fs::read_dir(layer.path()).into_iter().flatten().flatten() {
+            for f in horizon_core::resource_fs::read_dir(layer.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
                 let path = f.path();
                 if path.extension().is_some_and(|e| e == "png")
                     && let Some((w, h)) = png_size(&path)

@@ -68,7 +68,7 @@ pub fn properties_files(root: &Path, feature: &str) -> Vec<String> {
 pub fn properties_files_in(root: &Path, tops: &[&str], feature: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
         return out;
     };
     for ns in namespaces.flatten() {
@@ -134,14 +134,14 @@ fn walk(
     if depth > MAX_DEPTH || !fs::canonicalize(dir).is_ok_and(|real| seen.insert(real)) {
         return;
     }
-    let Ok(entries) = fs::read_dir(dir) else {
+    let Ok(entries) = horizon_core::resource_fs::read_dir(dir) else {
         return;
     };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         let rel = format!("{rel}/{name}");
         // `metadata` follows links: overlay folders are links into the packs and vanilla.
-        match fs::metadata(e.path()) {
+        match horizon_core::resource_fs::metadata(e.path()) {
             Ok(m) if m.is_dir() => walk(&e.path(), &rel, endings, depth + 1, seen, out),
             Ok(_) if endings.iter().any(|end| name.ends_with(end)) => out.push(rel),
             _ => {}

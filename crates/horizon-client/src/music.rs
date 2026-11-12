@@ -9,7 +9,6 @@ use horizon_core::random::{LegacyRandom, RandomSource};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
     path::Path,
 };
 
@@ -257,7 +256,9 @@ pub struct MusicTables {
 impl MusicTables {
     pub fn load(root: &Path) -> Self {
         let read = |dir: &str| -> HashMap<String, Layer> {
-            let Ok(entries) = fs::read_dir(root.join("data/minecraft").join(dir)) else {
+            let Ok(entries) =
+                horizon_core::resource_fs::read_dir(root.join("data/minecraft").join(dir))
+            else {
                 return HashMap::new();
             };
             entries
@@ -265,7 +266,9 @@ impl MusicTables {
                 .filter_map(|e| {
                     let path = e.path();
                     let name = path.file_stem()?.to_str()?.to_owned();
-                    let json: Value = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
+                    let json: Value =
+                        serde_json::from_slice(&horizon_core::resource_fs::read(&path).ok()?)
+                            .ok()?;
                     Some((format!("minecraft:{name}"), Layer::parse(&json)))
                 })
                 .collect()

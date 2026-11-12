@@ -52,14 +52,14 @@ impl SpriteModifiers {
     /// for each sprite, the last file that targets it.
     pub fn read<'a>(root: &Path, keys: impl Iterator<Item = &'a String>) -> Self {
         let mut modifiers = Vec::new();
-        let namespaces = std::fs::read_dir(root.join("assets"))
+        let namespaces = horizon_core::resource_fs::read_dir(root.join("assets"))
             .into_iter()
             .flatten()
             .flatten();
         for namespace in namespaces {
             let mut stack = vec![namespace.path().join("polytone/overlay_modifiers")];
             while let Some(dir) = stack.pop() {
-                let mut entries: Vec<_> = std::fs::read_dir(&dir)
+                let mut entries: Vec<_> = horizon_core::resource_fs::read_dir(&dir)
                     .into_iter()
                     .flatten()
                     .flatten()
@@ -67,7 +67,7 @@ impl SpriteModifiers {
                 entries.sort_by_key(|e| e.path());
                 for entry in entries {
                     let path = entry.path();
-                    if path.is_dir() {
+                    if horizon_core::resource_fs::is_dir(&path) {
                         stack.push(path);
                         continue;
                     }

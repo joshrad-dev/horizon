@@ -60,10 +60,11 @@ pub fn identity(root: &Path) -> Result<[u8; 32], IdentityError> {
     if let Some(hash) = identities.get(root) {
         return Ok(*hash);
     }
-    let bytes = std::fs::read(root.join("facts.json")).map_err(IdentityError::Read)?;
+    let bytes =
+        horizon_core::resource_fs::read(root.join("facts.json")).map_err(IdentityError::Read)?;
     let mut hash = hash_facts(&bytes)?;
     // A root without mod entries keeps its block-only identity.
-    if let Ok(registries) = std::fs::read(root.join("registries.json")) {
+    if let Ok(registries) = horizon_core::resource_fs::read(root.join("registries.json")) {
         let report = parse_registries(&registries)?;
         for registry in REGISTRIES {
             let entries = mod_entries(&report, registry);

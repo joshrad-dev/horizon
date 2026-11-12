@@ -46,7 +46,7 @@ impl DataPack {
         let Source::Dir(root) = &self.source else {
             return self.list("data/");
         };
-        let Ok(entries) = std::fs::read_dir(root.join("data")) else {
+        let Ok(entries) = horizon_core::resource_fs::read_dir(root.join("data")) else {
             return Vec::new();
         };
         let mut namespaces: Vec<_> = entries.flatten().map(|e| e.path()).collect();
@@ -80,7 +80,7 @@ impl DataPack {
     pub fn read(&self, path: &str) -> Option<Vec<u8>> {
         match &self.source {
             Source::Zip(z) => z.read(path).ok(),
-            Source::Dir(root) => std::fs::read(root.join(path)).ok(),
+            Source::Dir(root) => horizon_core::resource_fs::read(root.join(path)).ok(),
         }
     }
 
@@ -115,14 +115,14 @@ impl DataPack {
     }
 }
 fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = horizon_core::resource_fs::read_dir(dir) else {
         return;
     };
     let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(std::fs::DirEntry::file_name);
+    entries.sort_by_key(horizon_core::resource_fs::DirEntry::file_name);
     for e in entries {
         let p = e.path();
-        if p.is_dir() {
+        if horizon_core::resource_fs::is_dir(&p) {
             walk(root, &p, out);
         } else if let Ok(rel) = p.strip_prefix(root) {
             out.push(rel.to_string_lossy().replace('\\', "/"));
@@ -191,14 +191,15 @@ fn folder_metadata_present(path: &Path) -> bool {
 /// `pack.mcmeta`, a feature pack (`PackSource.FEATURE`). Off until a world
 /// selects them.
 pub fn feature_packs(resources: &Path) -> Vec<DataPack> {
-    let Ok(entries) = std::fs::read_dir(resources.join("data").join("minecraft").join("datapacks"))
-    else {
+    let Ok(entries) = horizon_core::resource_fs::read_dir(
+        resources.join("data").join("minecraft").join("datapacks"),
+    ) else {
         return Vec::new();
     };
     let mut packs = Vec::new();
     for e in entries.flatten() {
         let path = e.path();
-        if path.join("pack.mcmeta").exists() {
+        if horizon_core::resource_fs::is_file(path.join("pack.mcmeta")) {
             packs.push(DataPack {
                 id: e.file_name().to_string_lossy().into_owned(),
                 source: Source::Dir(path),
@@ -252,7 +253,7 @@ pub fn screen_packs(dir: &Path, resources: &Path) -> Vec<crate::pack_screen::Pac
         description_style: Style::default(),
         source: Source::BuiltIn,
         compat: Compat::Compatible,
-        icon: std::fs::read(resources.join("pack.png"))
+        icon: horizon_core::resource_fs::read(resources.join("pack.png"))
             .ok()
             .as_deref()
             .and_then(load_icon),

@@ -12,7 +12,7 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
         Self(root)
     }
 
@@ -25,8 +25,8 @@ impl Fixture {
 
     fn write(&self, id: u8, width: u32) {
         let path = asset_path(&self.0, "textures", &self.texture(id).texture, ".png");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let mut encoder = png::Encoder::new(fs::File::create(path).unwrap(), width, 1);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut encoder = png::Encoder::new(std::fs::File::create(path).unwrap(), width, 1);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         encoder
@@ -60,7 +60,7 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 

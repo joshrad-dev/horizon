@@ -20,7 +20,7 @@ impl Game<'_> {
         static TRANSFORMS: OnceLock<Option<StateTransforms>> = OnceLock::new();
         TRANSFORMS
             .get_or_init(|| {
-                let json = std::fs::read_to_string(
+                let json = horizon_core::resource_fs::read_to_string(
                     self.options
                         .resources
                         .join("worldgen/blocks/structure-blocks.json"),
@@ -49,9 +49,9 @@ impl Game<'_> {
             .join(ns)
             .join(format!("{path}.nbt"));
         let candidates = [
-            std::fs::read(&generated).ok(),
+            horizon_core::resource_fs::read(&generated).ok(),
             self.fns.pack_file(&in_pack),
-            std::fs::read(&prepared).ok(),
+            horizon_core::resource_fs::read(&prepared).ok(),
         ];
         for bytes in candidates.into_iter().flatten() {
             let Ok(raw) = Compression::Gzip.decode(&bytes, 1 << 28) else {

@@ -589,7 +589,8 @@ fn fail(message: &str) -> io::Error {
 /// From the file's bytes in memory: several times faster than through a
 /// reader on gameplay-facts.json (55 MB), which a first start parses.
 fn read_json(path: &Path) -> io::Result<Value> {
-    serde_json::from_slice(&fs::read(path)?).map_err(|e| invalid(e.to_string()))
+    serde_json::from_slice(&horizon_core::resource_fs::read(path)?)
+        .map_err(|e| invalid(e.to_string()))
 }
 
 fn interned(cache: &mut HashMap<String, Arc<str>>, text: &str) -> Arc<str> {
@@ -634,7 +635,9 @@ pub fn load_registry_with_flags(root: &Path) -> io::Result<(BlockRegistry, Vec<(
         return Ok(cached);
     }
     // Read whole, then parsed from the slice: see `BlockRegistry::from_facts_json_bytes`.
-    let loaded = BlockRegistry::from_facts_json_bytes(&fs::read(root.join("facts.json"))?)?;
+    let loaded = BlockRegistry::from_facts_json_bytes(&horizon_core::resource_fs::read(
+        root.join("facts.json"),
+    )?)?;
     cache::store_registry(root, &loaded.0, &loaded.1);
     Ok(loaded)
 }
@@ -798,7 +801,7 @@ fn build_with_gameplay<G: GameplayStateSource>(
     // Fluid tags.
     let mut fluid_definitions = TagDefinitions::default();
     let fluid_dir = root.join("data/minecraft/tags/fluid");
-    for entry in fs::read_dir(&fluid_dir)? {
+    for entry in horizon_core::resource_fs::read_dir(&fluid_dir)? {
         let path = entry?.path();
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
@@ -807,7 +810,7 @@ fn build_with_gameplay<G: GameplayStateSource>(
             .apply_json(
                 &format!("minecraft:{stem}"),
                 "vanilla",
-                &fs::read_to_string(&path)?,
+                &horizon_core::resource_fs::read_to_string(&path)?,
             )
             .map_err(|e| invalid(e.to_string()))?;
     }

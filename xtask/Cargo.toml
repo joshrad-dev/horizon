@@ -10,6 +10,9 @@ description = "Repository tasks: cargo run -p xtask -- package BINARY OUTDIR | t
 [dependencies]
 horizon-mod-api-gen = { path = "../crates/horizon-mod-api-gen" }
 horizon-theme = { path = "../crates/horizon-theme" }
+# ios-pack: the iOS app's packed resources (zstd level 19; the game decodes them with ruzstd).
+horizon-core = { path = "../crates/horizon-core" }
+zstd = { version = "0.13", default-features = false }
 
 [lints]
 workspace = true

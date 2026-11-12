@@ -109,13 +109,17 @@ impl RecipeFilters {
 }
 
 fn read_dir(dir: &Path, prefix: &str, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+    for entry in horizon_core::resource_fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if path.is_dir() {
+        if horizon_core::resource_fs::is_dir(&path) {
             read_dir(&path, &format!("{prefix}{name}/"), out);
         } else if let Some(stem) = name.strip_suffix(".json")
-            && let Ok(bytes) = std::fs::read(&path)
+            && let Ok(bytes) = horizon_core::resource_fs::read(&path)
         {
             out.insert(format!("{prefix}{stem}"), bytes);
         }

@@ -202,7 +202,7 @@ impl ColorProperties {
     /// The pack's file under `root`, or vanilla's colours (all `None`) without one.
     pub fn load(root: &Path) -> Self {
         for file in FILES {
-            if let Ok(text) = std::fs::read_to_string(root.join(file)) {
+            if let Ok(text) = horizon_core::resource_fs::read_to_string(root.join(file)) {
                 let mut out = Self::parse(file, &Properties::parse(&text));
                 out.file = Some(file.to_owned());
                 return out;

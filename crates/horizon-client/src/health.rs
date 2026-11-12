@@ -21,7 +21,7 @@ use horizon_world::{
     server_player_damage::ServerDamageEnvironment,
     synced_floats::{FloatValue, Observer, SyncedFloats},
 };
-use std::{cell::Cell, fs, io, path::Path, sync::OnceLock};
+use std::{cell::Cell, io, path::Path, sync::OnceLock};
 mod equipment;
 #[doc(hidden)]
 pub use equipment::EquipmentHurt;
@@ -170,7 +170,9 @@ pub struct HealthResources {
 impl HealthResources {
     pub fn load(root: &Path) -> Result<Self> {
         let read = |name: &str| -> Result<serde_json::Value> {
-            Ok(serde_json::from_slice(&fs::read(root.join(name))?)?)
+            Ok(serde_json::from_slice(&horizon_core::resource_fs::read(
+                root.join(name),
+            )?)?)
         };
         let ids = read("player-float-ids.json")?;
         let id = |name: &str| -> Result<u8> {

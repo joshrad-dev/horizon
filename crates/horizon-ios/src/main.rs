@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 #[cfg(target_os = "ios")]
 mod display;
+mod languages;
 #[cfg(target_os = "ios")]
 mod pager;
 
@@ -32,6 +33,11 @@ fn main() {
         let _ = std::fs::create_dir_all(dir);
     }
     let resources = bundle.join("GameData");
+    // The app ships its resources packed (`xtask ios-pack`): read from the one file from the start.
+    horizon_core::prepared_files::open(&resources);
+    // Of vanilla's languages it ships English; the others are fetched when the player picks one.
+    let languages = languages::Languages::new(&resources, home.join("Library/Caches/horizon-lang"));
+    horizon_client::lang::install_remote(Box::leak(Box::new(languages)));
     let mut args = vec![
         "--resources".to_owned(),
         resources.display().to_string(),

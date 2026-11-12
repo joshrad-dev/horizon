@@ -5,10 +5,19 @@
 #
 #   tools/ios/build_app.sh                     # simulator build, app in target/ios/Horizon.app
 #   tools/ios/build_app.sh --install UDID      # and install it on that simulator
-#   tools/ios/build_app.sh --device --sign "Apple Development: ..." --profile path.mobileprovision
+#   tools/ios/build_app.sh --device --sign "Apple Development: ..." --profile path.mobileprovision \
+#       [--entitlements path.entitlements]
+#
+# The app's GameData is staged small (tools/ios/stage_resources.py): the resources packed into
+# one zstd-compressed file, English alone of vanilla's languages (the app fetches the others),
+# the sounds re-encoded. A build with a profile other than fast or dev ships a stripped binary;
+# the unstripped one stays beside the app (horizon-ios.unstripped) to symbolicate crash reports
+# with `atos -o`.
 #
 # Env: PROFILE (cargo profile, default fast), RESOURCES (default .local/horizon-client/26.3),
-#      BUNDLE_ID (default dev.horizonlab.horizon.ios), NO_SOUNDS=1 to leave the sounds out.
+#      BUNDLE_ID (default dev.horizonlab.horizon.ios), BUILD_NUMBER (CFBundleVersion, default 1),
+#      SOUND_QUALITY (oggenc -q, default 0), LANGUAGES (default en_us), NO_SOUNDS=1 to leave
+#      the sounds out.
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -19,12 +28,14 @@ TARGET=aarch64-apple-ios-sim
 INSTALL=""
 SIGN="-"
 PROVISION=""
+ENTITLEMENTS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --device) TARGET=aarch64-apple-ios ;;
         --install) INSTALL=$2; shift ;;
         --sign) SIGN=$2; shift ;;
         --profile) PROVISION=$2; shift ;;
+        --entitlements) ENTITLEMENTS=$2; shift ;;
         *) echo "unknown argument $1" >&2; exit 2 ;;
     esac
     shift
@@ -39,21 +50,36 @@ else
 fi
 cargo build --profile "$PROFILE" --target "$TARGET" -p horizon-ios
 
-APP="$ROOT/target/ios/$TARGET/Horizon.app"
+OUT="$ROOT/target/ios/$TARGET"
+APP="$OUT/Horizon.app"
 mkdir -p "$APP"
-cp "target/$TARGET/$PROFILE/horizon-ios" "$APP/horizon-ios"
+BINARY="target/$TARGET/$PROFILE/horizon-ios"
+case "$PROFILE" in
+    fast | dev) cp "$BINARY" "$APP/horizon-ios" ;;
+    *)
+        # Symbols only name functions in a crash report: they stay beside the app, not in it.
+        cp "$BINARY" "$OUT/horizon-ios.unstripped"
+        xcrun strip -x -S -o "$APP/horizon-ios" "$BINARY"
+        ;;
+esac
 sed -e "s/@BUNDLE_ID@/$BUNDLE_ID/" -e "s/@MIN_OS@/$IPHONEOS_DEPLOYMENT_TARGET/" \
     -e "s/@PLATFORM@/$( [ "$MIN_KEY" = iphoneos ] && echo iPhoneOS || echo iPhoneSimulator )/" \
     "$ROOT/crates/horizon-ios/Info.plist" > "$APP/Info.plist"
-EXCLUDE=""
-[ "${NO_SOUNDS:-0}" = 1 ] && EXCLUDE="--exclude=sounds/"
-# shellcheck disable=SC2086
-rsync -a --delete $EXCLUDE "$RESOURCES/" "$APP/GameData/"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER:-1}" "$APP/Info.plist"
+python3 "$ROOT/tools/ios/stage_resources.py" --resources "$RESOURCES" --out "$APP/GameData" \
+    --quality "${SOUND_QUALITY:-0}" --languages "${LANGUAGES:-en_us}"
+if [ "${NO_SOUNDS:-0}" = 1 ]; then
+    find "$APP/GameData" -name '*.ogg' -delete
+fi
 if [ -n "$PROVISION" ]; then
     cp "$PROVISION" "$APP/embedded.mobileprovision"
 fi
-codesign --force --sign "$SIGN" --timestamp=none "$APP"
-echo "built $APP"
+if [ -n "$ENTITLEMENTS" ]; then
+    codesign --force --sign "$SIGN" --timestamp=none --entitlements "$ENTITLEMENTS" "$APP"
+else
+    codesign --force --sign "$SIGN" --timestamp=none "$APP"
+fi
+echo "built $APP ($(du -sh "$APP" | cut -f1))"
 if [ -n "$INSTALL" ]; then
     xcrun simctl install "$INSTALL" "$APP"
     echo "installed $BUNDLE_ID on $INSTALL"

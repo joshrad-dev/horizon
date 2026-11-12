@@ -125,9 +125,13 @@ fn json_files(root: &Path, dir: &Path) -> Vec<(String, Json)> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        for entry in horizon_core::resource_fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
             let path = entry.path();
-            if path.is_dir() {
+            if horizon_core::resource_fs::is_dir(&path) {
                 stack.push(path);
                 continue;
             }
@@ -177,7 +181,7 @@ impl Registry {
                 Err(e) => log::warn!("colors particle.{id}: {e}"),
             }
         }
-        let namespaces = std::fs::read_dir(pack_root.join("assets"))
+        let namespaces = horizon_core::resource_fs::read_dir(pack_root.join("assets"))
             .into_iter()
             .flatten()
             .flatten();

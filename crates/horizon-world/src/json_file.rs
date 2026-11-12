@@ -6,11 +6,11 @@
 //! of that message.
 
 use serde::de::{Deserialize, DeserializeOwned};
-use std::{fs, io, path::Path};
+use std::{io, path::Path};
 
 /// `path`'s bytes; an I/O error names the file.
 pub fn read_bytes(path: &Path) -> io::Result<Vec<u8>> {
-    fs::read(path).map_err(|e| named(path, e))
+    horizon_core::resource_fs::read(path).map_err(|e| named(path, e))
 }
 
 /// `bytes` as JSON; a parse error names `path`.
@@ -37,8 +37,8 @@ fn named(path: &Path, error: io::Error) -> io::Error {
 #[cfg(test)]
 fn test_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("horizon-json-file-{tag}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
@@ -50,18 +50,18 @@ mod tests {
     fn a_parse_error_names_the_file() {
         let dir = test_dir("parse");
         let empty = dir.join("gameplay-facts.json");
-        fs::write(&empty, b"").unwrap();
+        std::fs::write(&empty, b"").unwrap();
         let error = read::<serde_json::Value>(&empty).unwrap_err().to_string();
         assert!(error.contains("gameplay-facts.json"), "{error}");
 
         let broken = dir.join("block-tags.json");
-        fs::write(&broken, br#"{"a": "#).unwrap();
+        std::fs::write(&broken, br#"{"a": "#).unwrap();
         let error = read::<serde_json::Value>(&broken).unwrap_err().to_string();
         assert!(error.contains("block-tags.json"), "{error}");
 
         let missing = dir.join("attributes.json");
         let error = read::<serde_json::Value>(&missing).unwrap_err().to_string();
         assert!(error.contains("attributes.json"), "{error}");
-        let _ = fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

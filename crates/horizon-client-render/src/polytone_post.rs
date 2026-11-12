@@ -68,16 +68,20 @@ impl PolyGlobals {
 /// Every `.json` under `assets/<namespace>/polytone/<kind>`, by its implicit id.
 fn files(root: &Path, kind: &str) -> Vec<(String, Json)> {
     let mut out = Vec::new();
-    let namespaces = std::fs::read_dir(root.join("assets"))
+    let namespaces = horizon_core::resource_fs::read_dir(root.join("assets"))
         .into_iter()
         .flatten()
         .flatten();
     for namespace in namespaces {
         let mut stack = vec![namespace.path().join("polytone").join(kind)];
         while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            for entry in horizon_core::resource_fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
                 let path = entry.path();
-                if path.is_dir() {
+                if horizon_core::resource_fs::is_dir(&path) {
                     stack.push(path);
                     continue;
                 }

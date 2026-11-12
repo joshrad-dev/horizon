@@ -1586,10 +1586,10 @@ impl ParticleEngine {
     /// and a native mod's (`assets/<namespace>/particles/<name>.json`).
     fn load_sprites(&mut self, root: &Path) {
         let assets = root.join("assets");
-        if let Ok(namespaces) = std::fs::read_dir(&assets) {
+        if let Ok(namespaces) = horizon_core::resource_fs::read_dir(&assets) {
             for namespace in namespaces.flatten() {
                 let ns = namespace.file_name().to_string_lossy().into_owned();
-                if ns == "minecraft" || !namespace.path().is_dir() {
+                if ns == "minecraft" || !horizon_core::resource_fs::is_dir(namespace.path()) {
                     continue;
                 }
                 self.load_mod_sprites(&ns, &namespace.path().join("particles"));
@@ -1625,7 +1625,7 @@ impl ParticleEngine {
     /// A namespace's particle JSONs that vanilla has no type for: each becomes
     /// one sprite set under `<ns>:<file name>`.
     fn load_mod_sprites(&mut self, ns: &str, dir: &Path) {
-        let Ok(files) = std::fs::read_dir(dir) else {
+        let Ok(files) = horizon_core::resource_fs::read_dir(dir) else {
             return;
         };
         for file in files.flatten() {
@@ -1640,7 +1640,7 @@ impl ParticleEngine {
             if ParticleType::from_name(&key).is_some() {
                 continue;
             }
-            let Ok(bytes) = std::fs::read(&path) else {
+            let Ok(bytes) = horizon_core::resource_fs::read(&path) else {
                 continue;
             };
             let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) else {

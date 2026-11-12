@@ -11383,7 +11383,7 @@ impl Game<'_> {
         if !path.starts_with("data/") || !path.split('/').all(plain) {
             return None;
         }
-        fs::read(self.options.resources.join(path)).ok()
+        horizon_core::resource_fs::read(self.options.resources.join(path)).ok()
     }
     /// The block at `pos` (`mymod:cable`; air where nothing is loaded).
     /// API 20.
@@ -11561,7 +11561,9 @@ impl Game<'_> {
     /// A mod's setting `key` (one file per key in `native_data_dir`).
     pub(super) fn native_setting(&self, mod_id: &str, key: &str) -> Option<String> {
         let path = self.native_data_dir(mod_id).join(key);
-        fs::read_to_string(path).ok().map(|v| v.trim().to_owned())
+        horizon_core::resource_fs::read_to_string(path)
+            .ok()
+            .map(|v| v.trim().to_owned())
     }
     /// Keeps a mod's setting `key`.
     pub(super) fn native_set_setting(&self, mod_id: &str, key: &str, value: &str) {

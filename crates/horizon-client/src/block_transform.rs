@@ -6,7 +6,7 @@
 use crate::{Result, items::Items};
 use horizon_world::{chunk::BlockState, registry::BlockRegistry};
 use serde_json::Value;
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, path::Path};
 
 enum Predicate {
     Blocks(Vec<String>),
@@ -183,13 +183,13 @@ impl Transformers {
     pub fn load(root: &Path, registry: &BlockRegistry) -> Result<Self> {
         let mut transformers = HashMap::new();
         let dir = root.join("data/minecraft/block_transformer");
-        if dir.exists() {
-            for entry in fs::read_dir(&dir)?.flatten() {
+        if horizon_core::resource_fs::exists(&dir) {
+            for entry in horizon_core::resource_fs::read_dir(&dir)?.flatten() {
                 let path = entry.path();
                 let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                     continue;
                 };
-                let list: Value = serde_json::from_slice(&fs::read(&path)?)?;
+                let list: Value = serde_json::from_slice(&horizon_core::resource_fs::read(&path)?)?;
                 let mut transforms = Vec::new();
                 for t in list.as_array().into_iter().flatten() {
                     let text = |k: &str, d: &str| t[k].as_str().unwrap_or(d).to_owned();

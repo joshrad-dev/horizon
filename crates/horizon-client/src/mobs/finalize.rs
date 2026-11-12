@@ -23,7 +23,7 @@ use super::{Mob, Species, farm::Climate, gear, spawning::LocalDifficulty};
 use crate::{enchant::Enchantments, items::Items};
 use horizon_core::{geometry::Aabb, random::RandomSource};
 use serde_json::Value;
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 /// `EntitySpawnReason`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -204,7 +204,7 @@ pub struct VariantRegistry {
 }
 impl VariantRegistry {
     fn load(dir: &Path, structure_tags: &dyn Fn(&str) -> Vec<String>) -> Self {
-        let mut names: Vec<String> = fs::read_dir(dir)
+        let mut names: Vec<String> = horizon_core::resource_fs::read_dir(dir)
             .into_iter()
             .flatten()
             .flatten()
@@ -218,7 +218,8 @@ impl VariantRegistry {
         names.sort();
         let mut selectors = Vec::new();
         for (i, name) in names.iter().enumerate() {
-            let Ok(bytes) = fs::read(dir.join(format!("{name}.json"))) else {
+            let Ok(bytes) = horizon_core::resource_fs::read(dir.join(format!("{name}.json")))
+            else {
                 continue;
             };
             let Ok(v) = serde_json::from_slice::<Value>(&bytes) else {
@@ -339,7 +340,7 @@ impl SpawnRegistries {
         let structure_tag = |tag: &str| -> Vec<String> {
             let path = tag.strip_prefix("minecraft:").unwrap_or(tag);
             let file = data.join(format!("tags/worldgen/structure/{path}.json"));
-            let Ok(bytes) = fs::read(file) else {
+            let Ok(bytes) = horizon_core::resource_fs::read(file) else {
                 return Vec::new();
             };
             serde_json::from_slice::<Value>(&bytes)

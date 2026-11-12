@@ -475,7 +475,7 @@ static RESOURCE_IDS: Mutex<Vec<(PathBuf, Arc<ResourceIds>)>> = Mutex::new(Vec::n
 
 /// The `minecraft:` ids of the `.json` files directly in `dir`, sorted.
 fn json_ids_in(dir: &Path) -> Vec<String> {
-    let mut out: Vec<String> = std::fs::read_dir(dir)
+    let mut out: Vec<String> = horizon_core::resource_fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
@@ -497,9 +497,9 @@ fn overworld_timelines(root: &Path) -> (Vec<(String, Option<i64>)>, Vec<(String,
     let (mut timelines, mut markers) = (Vec::new(), Vec::new());
     for name in json_ids_in(&dir) {
         let path = dir.join(format!("{}.json", name.trim_start_matches("minecraft:")));
-        let Ok(v) =
-            serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap_or_default())
-        else {
+        let Ok(v) = serde_json::from_slice::<serde_json::Value>(
+            &horizon_core::resource_fs::read(path).unwrap_or_default(),
+        ) else {
             continue;
         };
         if v["clock"].as_str() != Some("minecraft:overworld") {
@@ -535,7 +535,7 @@ fn resource_ids(root: &Path) -> Arc<ResourceIds> {
     }
     let data = root.join("data/minecraft");
     let mut entity_types: Vec<String> = serde_json::from_slice::<serde_json::Value>(
-        &std::fs::read(root.join("entity-types.json")).unwrap_or_default(),
+        &horizon_core::resource_fs::read(root.join("entity-types.json")).unwrap_or_default(),
     )
     .ok()
     .and_then(|v| {
@@ -612,7 +612,7 @@ fn command_export(dir: &Path, keep: bool) -> Option<Arc<Registries>> {
     if let Some((_, export)) = cache.iter().find(|(cached, _)| cached == dir) {
         return export.clone();
     }
-    let export = std::fs::read(dir.join("command-registries.json"))
+    let export = horizon_core::resource_fs::read(dir.join("command-registries.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .map(|export| Arc::new(Registries::from_export(&export)));
@@ -626,13 +626,14 @@ fn command_export(dir: &Path, keep: bool) -> Option<Arc<Registries>> {
 /// namespace of `root` (vanilla's and the content mods'), sorted.
 fn json_ids_of_every_namespace(root: &Path, kind: &str) -> Vec<String> {
     let data = root.join("data");
-    let mut namespaces: std::collections::BTreeSet<String> = std::fs::read_dir(&data)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+    let mut namespaces: std::collections::BTreeSet<String> =
+        horizon_core::resource_fs::read_dir(&data)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| horizon_core::resource_fs::is_dir(e.path()))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
     // A prepared root's namespaces live in its data file, not on the disk.
     if let Some(files) = horizon_core::prepared_files::files_under(&data) {
         namespaces.extend(
@@ -652,12 +653,12 @@ fn json_ids_of_every_namespace(root: &Path, kind: &str) -> Vec<String> {
 /// The templates of every namespace folder under `root` (vanilla's and the
 /// content mods'), as `namespace:path`, sorted.
 fn templates_under(root: &Path) -> Vec<String> {
-    let Ok(namespaces) = std::fs::read_dir(root) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root) else {
         return Vec::new();
     };
     let mut out: Vec<String> = namespaces
         .flatten()
-        .filter(|e| e.path().is_dir())
+        .filter(|e| horizon_core::resource_fs::is_dir(e.path()))
         .flat_map(|e| ids_in(&e.path(), "nbt", &e.file_name().to_string_lossy()))
         .collect();
     out.sort();
@@ -681,7 +682,7 @@ fn ids_in(root: &Path, extension: &str, namespace: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_owned()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+        let Ok(entries) = horizon_core::resource_fs::read_dir(&dir) else {
             continue;
         };
         for e in entries.flatten() {
@@ -1890,7 +1891,8 @@ impl Game<'_> {
         self.ui.command_clocks.clear();
         // PrimaryLevelData: the difficulty comes back from level.dat's difficulty_settings.
         self.ui.difficulty = self.level.difficulty_id();
-        if let Ok(bytes) = std::fs::read(self.world_root.join("data/minecraft/world_clocks.dat"))
+        if let Ok(bytes) =
+            horizon_core::resource_fs::read(self.world_root.join("data/minecraft/world_clocks.dat"))
             && let Ok(raw) = horizon_world::compression::Compression::Gzip.decode(&bytes, 1 << 20)
             && let Ok((root, _)) =
                 horizon_world::nbt::read_named(&raw, horizon_world::nbt::Limits::default())

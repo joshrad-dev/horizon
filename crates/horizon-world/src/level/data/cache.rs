@@ -201,9 +201,10 @@ fn sources_digest(root: &Path) -> io::Result<[u8; 32]> {
     .iter()
     .map(|relative| root.join(relative))
     .collect();
-    let mut fluids: Vec<PathBuf> = fs::read_dir(root.join("data/minecraft/tags/fluid"))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<io::Result<_>>()?;
+    let mut fluids: Vec<PathBuf> =
+        horizon_core::resource_fs::read_dir(root.join("data/minecraft/tags/fluid"))?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<io::Result<_>>()?;
     fluids.sort();
     paths.extend(fluids);
     paths_digest(root, &paths)
@@ -217,7 +218,7 @@ fn paths_digest(root: &Path, paths: &[PathBuf]) -> io::Result<[u8; 32]> {
     let stamps = paths
         .iter()
         .map(|path| {
-            let meta = fs::metadata(path)?;
+            let meta = horizon_core::resource_fs::metadata(path)?;
             Ok((path.clone(), meta.len(), meta.modified().ok()))
         })
         .collect::<io::Result<Vec<_>>>()?;
@@ -248,7 +249,7 @@ fn hash_file(hasher: &mut Sha256, root: &Path, path: &Path) -> io::Result<()> {
         .strip_prefix(root)
         .map_err(|e| invalid(e.to_string()))?;
     hash_str(hasher, &relative.to_string_lossy());
-    let bytes = fs::read(path)?;
+    let bytes = horizon_core::resource_fs::read(path)?;
     hasher.update((bytes.len() as u64).to_le_bytes());
     hasher.update(hash_contents(&bytes));
     Ok(())

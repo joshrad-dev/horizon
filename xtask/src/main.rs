@@ -16,6 +16,12 @@
 //! `icons`: renders the icon masters in `docs/media/brand` (with `rsvg-convert`, from librsvg)
 //! into every size the platforms and the website use, and packs `packaging/icons/horizon.ico`
 //! and `horizon.icns`. `docs/media/brand/README.md` lists what goes where.
+//!
+//! `ios-pack ROOT OUT [LANGUAGES]`: the iOS app's packed `horizon-data.bin` (`prepared_files.rs`,
+//! version 3) of the prepared folder ROOT, written to OUT: every file but the sounds and
+//! `horizon-resources.json`, each zstd-compressed at level 19 where that is smaller. Of vanilla's
+//! languages only LANGUAGES (comma-separated, default `en_us`) go in; the app fetches the others
+//! when the player picks one. tools/ios/build_app.sh runs it.
 
 mod mod_api;
 
@@ -23,7 +29,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | tokens | icons";
+const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | tokens | icons | ios-pack ROOT OUT [LANGUAGES]";
 
 /// What the release folder takes from the repository at HEAD, as `git archive` writes it.
 const ARCHIVED: [&str; 5] = [
@@ -53,6 +59,12 @@ fn main() -> ExitCode {
         [task] if task == "mod-api" => mod_api::run(),
         [task] if task == "tokens" => tokens(),
         [task] if task == "icons" => icons(),
+        [task, root, out] if task == "ios-pack" => {
+            ios_pack(Path::new(root), Path::new(out), "en_us")
+        }
+        [task, root, out, languages] if task == "ios-pack" => {
+            ios_pack(Path::new(root), Path::new(out), languages)
+        }
         _ => Err(USAGE.to_string()),
     };
     match result {
@@ -454,6 +466,33 @@ fn extract(tar: &[u8], out: &Path) -> Result<(), String> {
         }
     }
     Err("the archive has no end".into())
+}
+
+/// `ios-pack`: see the module's documentation.
+fn ios_pack(root: &Path, out: &Path, languages: &str) -> Result<(), String> {
+    let languages: Vec<String> = languages
+        .split(',')
+        .map(|code| format!("assets/minecraft/lang/{}.json", code.trim()))
+        .collect();
+    // A language's file goes in only when asked for; `deprecated.json` beside them always does.
+    let keep = |name: &str| {
+        !name.starts_with("assets/minecraft/lang/")
+            || name.ends_with("/deprecated.json")
+            || languages.iter().any(|l| l == name)
+    };
+    let compress = |bytes: &[u8]| zstd::bulk::compress(bytes, 19);
+    let started = std::time::Instant::now();
+    let names = horizon_core::prepared_files::write_packed(root, out, &keep, &compress)
+        .map_err(|e| format!("{}: {e}", out.display()))?;
+    let size = fs::metadata(out).map_err(|e| e.to_string())?.len();
+    println!(
+        "packed {} files into {} ({:.1} MB) in {:.0} s",
+        names.len(),
+        out.display(),
+        size as f64 / 1048576.0,
+        started.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
 
 #[cfg(test)]

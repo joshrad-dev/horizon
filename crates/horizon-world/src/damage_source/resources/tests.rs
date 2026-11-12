@@ -15,17 +15,17 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
         let types: Vec<_> = ["fall", "stalagmite", "starve"].into_iter().map(|name| json!({
             "id": format!("minecraft:{name}"), "message_id": name,
             "exhaustion": "3dcccccd", "scaling": "never", "effects": "hurt", "death_message_type": "default"
         })).collect();
-        fs::write(
+        std::fs::write(
             root.join("damage-catalog.json"),
             json!({"data_version": DATA_VERSION, "types": types}).to_string(),
         )
         .unwrap();
-        fs::write(
+        std::fs::write(
             root.join("damage-tags.json"),
             json!({"minecraft:bypasses_armor": "{\"values\":[\"minecraft:fall\"]}"}).to_string(),
         )
@@ -34,13 +34,13 @@ impl Fixture {
     }
     fn write(&self, path: &str, value: Value) {
         let path = self.0.join(path);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, value.to_string()).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, value.to_string()).unwrap();
     }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 fn definition(message: &str) -> Value {

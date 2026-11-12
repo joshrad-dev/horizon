@@ -7,6 +7,8 @@ rust-version.workspace = true
 description = "Polytone-format resource pack files: targets, and the biome and dimension modifiers' environment attribute layers"
 
 [dependencies]
+# Reads the prepared folder and packs through resource_fs (a packed folder: the iOS app's).
+horizon-core = { path = "../horizon-core" }
 log = "0.4"
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 serde_json = "1"

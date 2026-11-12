@@ -23,7 +23,7 @@ pub fn load(root: &Path, sprites: &mut Sprites) {
     names.sort();
     for name in names {
         let file = crate::atlas_sources::texture_path(root, &name, "textures");
-        if std::fs::metadata(file).is_ok_and(|m| m.len() <= 1 << 20) {
+        if horizon_core::resource_fs::metadata(file).is_ok_and(|m| m.len() <= 1 << 20) {
             let _ = sprites.insert(root, &name);
         }
     }
@@ -76,7 +76,7 @@ pub fn load_overlays(root: &Path, suffix: &str, sprites: &mut Sprites) -> Vec<(S
                 (overlay, file)
             }
         };
-        if !std::fs::metadata(&file).is_ok_and(|m| m.is_file()) {
+        if !horizon_core::resource_fs::metadata(&file).is_ok_and(|m| m.is_file()) {
             continue;
         }
         if pairs.len() == MAX - NATIVE {
@@ -86,7 +86,7 @@ pub fn load_overlays(root: &Path, suffix: &str, sprites: &mut Sprites) -> Vec<(S
             );
             break;
         }
-        if std::fs::metadata(&file).is_ok_and(|m| m.len() > 1 << 20) {
+        if horizon_core::resource_fs::metadata(&file).is_ok_and(|m| m.len() > 1 << 20) {
             log::warn!("Horizon: emissive overlay {overlay} is over 1 MiB, skipped");
             continue;
         }

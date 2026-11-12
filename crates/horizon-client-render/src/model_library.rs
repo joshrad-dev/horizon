@@ -6,7 +6,6 @@ use horizon_assets::{
 };
 use std::{
     collections::BTreeMap,
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -41,7 +40,7 @@ impl AssetReader for RootAssets {
 impl ParsedModels {
     /// Every `models/**.json` of a namespace directory, by identifier.
     pub fn load(root: &Path) -> Self {
-        let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+        let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
             return Self {
                 root: root.to_owned(),
                 ..Self::default()
@@ -55,7 +54,7 @@ impl ParsedModels {
             let base = ns.path().join("models");
             let mut stack = vec![base.clone()];
             while let Some(dir) = stack.pop() {
-                let Ok(entries) = fs::read_dir(&dir) else {
+                let Ok(entries) = horizon_core::resource_fs::read_dir(&dir) else {
                     continue;
                 };
                 for e in entries.flatten() {
@@ -64,7 +63,7 @@ impl ParsedModels {
                     // (content roots link into the base) is followed.
                     let is_dir = match e.file_type() {
                         Ok(t) if !t.is_symlink() => t.is_dir(),
-                        _ => path.is_dir(),
+                        _ => horizon_core::resource_fs::is_dir(&path),
                     };
                     if is_dir {
                         stack.push(path);
@@ -167,13 +166,13 @@ mod tests {
             let path = self
                 .0
                 .join(format!("assets/{namespace}/models/{path}.json"));
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, json).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, json).unwrap();
         }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -278,9 +277,9 @@ mod tests {
     fn root_assets_stay_inside_the_content_root() {
         let root = std::env::temp_dir().join(format!("horizon-root-assets-{}", std::process::id()));
         let inside = root.join("content");
-        fs::create_dir_all(inside.join("assets/m/models")).unwrap();
-        fs::write(inside.join("assets/m/models/a.mtl"), "newmtl a").unwrap();
-        fs::write(root.join("secret.mtl"), "newmtl secret").unwrap();
+        std::fs::create_dir_all(inside.join("assets/m/models")).unwrap();
+        std::fs::write(inside.join("assets/m/models/a.mtl"), "newmtl a").unwrap();
+        std::fs::write(root.join("secret.mtl"), "newmtl secret").unwrap();
         let assets = RootAssets(inside);
         assert_eq!(
             assets.read_text("m:models/a.mtl").as_deref(),
@@ -296,6 +295,6 @@ mod tests {
         ] {
             assert_eq!(assets.read_text(escape), None, "{escape}");
         }
-        fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

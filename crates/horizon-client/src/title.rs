@@ -59,7 +59,7 @@ fn recover_info(dir: &Path, old: bool, issue: Option<&crate::save::DatIssue>) ->
         return None;
     }
     let file = dir.join(if old { "level.dat_old" } else { "level.dat" });
-    let date = match std::fs::metadata(file).and_then(|m| m.modified()) {
+    let date = match horizon_core::resource_fs::metadata(file).and_then(|m| m.modified()) {
         Ok(time) => {
             let date: chrono::DateTime<chrono::Local> = time.into();
             date.format("%d/%m/%Y, %H:%M").to_string()
@@ -556,14 +556,14 @@ pub fn parse_seed(text: &str) -> Option<i64> {
     }))
 }
 pub fn list_worlds(saves: &Path) -> Vec<WorldEntry> {
-    let mut worlds: Vec<WorldEntry> = std::fs::read_dir(saves)
+    let mut worlds: Vec<WorldEntry> = horizon_core::resource_fs::read_dir(saves)
         .into_iter()
         .flatten()
         .flatten()
         .filter_map(|e| {
             let path = e.path();
             // findLevelCandidates: a folder with a level.dat or a level.dat_old.
-            let file = |name: &str| std::fs::metadata(path.join(name)).ok().filter(|m| m.is_file());
+            let file = |name: &str| horizon_core::resource_fs::metadata(path.join(name)).ok().filter(|m| m.is_file());
             // getFileModificationTime: level.dat's, else level.dat_old's.
             let file = file("level.dat").or_else(|| file("level.dat_old"))?;
             let modified = file.modified().unwrap_or(std::time::UNIX_EPOCH);
@@ -801,9 +801,10 @@ impl Title {
     pub fn new(saves: PathBuf, resources: &Path) -> Self {
         use chrono::Datelike;
         let today = chrono::Local::now();
-        let splashes =
-            std::fs::read_to_string(resources.join("assets/minecraft/texts/splashes.txt"))
-                .unwrap_or_default();
+        let splashes = horizon_core::resource_fs::read_to_string(
+            resources.join("assets/minecraft/texts/splashes.txt"),
+        )
+        .unwrap_or_default();
         // `SplashManager.RANDOM`: `RandomSource.create()`. `getSplash` rolls for
         // the player's name first, then picks the splash with `nextInt(size)`.
         let mut random = crate::random_source::create();
@@ -1712,7 +1713,9 @@ impl Title {
     ) {
         let path = self.saves.join(&world.folder).join("icon.png");
         let mut icons = self.icons.borrow_mut();
-        let pixels = if let Ok(modified) = std::fs::metadata(&path).and_then(|m| m.modified()) {
+        let pixels = if let Ok(modified) =
+            horizon_core::resource_fs::metadata(&path).and_then(|m| m.modified())
+        {
             let cached = icons
                 .entry(path.clone())
                 .or_insert_with(|| (std::time::UNIX_EPOCH, None));

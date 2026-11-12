@@ -81,12 +81,12 @@ pub fn read_metadata(root: &Path) -> UiMetadata {
             let mut files = Vec::new();
             let mut stack = vec![sprites];
             while let Some(dir) = stack.pop() {
-                let Ok(entries) = std::fs::read_dir(&dir) else {
+                let Ok(entries) = horizon_core::resource_fs::read_dir(&dir) else {
                     continue;
                 };
                 for e in entries.flatten() {
                     let p = e.path();
-                    if p.is_dir() {
+                    if horizon_core::resource_fs::is_dir(&p) {
                         stack.push(p);
                     } else if p.to_string_lossy().ends_with(".png.mcmeta") {
                         files.push(p);

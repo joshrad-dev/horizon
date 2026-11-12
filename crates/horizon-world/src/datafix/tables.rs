@@ -135,7 +135,7 @@ fn path() -> PathBuf {
 
 /// Whether the prepared tables are there (tests skip without them).
 pub fn available() -> bool {
-    path().is_file()
+    horizon_core::resource_fs::is_file(path())
 }
 
 fn text(s: String) -> &'static str {

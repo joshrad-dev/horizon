@@ -4,7 +4,7 @@
 //! entities' models.
 
 use super::model::{EntityModel, MAX_BYTES, parse_jem};
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, path::Path};
 
 /// Every `.jem` of the CEM folders by model name, sorted, each name's files best first:
 /// `emf/cem` before `optifine/cem` whichever form either uses, and within one folder the flat
@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 pub fn jem_files(root: &Path) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for base in ["assets/minecraft/emf/cem", "assets/minecraft/optifine/cem"] {
-        let Ok(entries) = fs::read_dir(root.join(base)) else {
+        let Ok(entries) = horizon_core::resource_fs::read_dir(root.join(base)) else {
             continue;
         };
         let (mut flat, mut nested) = (Vec::new(), Vec::new());
@@ -20,12 +20,12 @@ pub fn jem_files(root: &Path) -> BTreeMap<String, Vec<String>> {
             let name = e.file_name().to_string_lossy().into_owned();
             if let Some(model) = name.strip_suffix(".jem") {
                 // A directory named `x.jem` isn't a model.
-                if e.path().is_file() {
+                if horizon_core::resource_fs::is_file(e.path()) {
                     flat.push((model.to_owned(), format!("{base}/{name}")));
                 }
             } else {
                 let path = format!("{base}/{name}/{name}.jem");
-                if root.join(&path).is_file() {
+                if horizon_core::resource_fs::is_file(root.join(&path)) {
                     nested.push((name, path));
                 }
             }
@@ -60,7 +60,7 @@ pub fn load_jem(root: &Path, path: &str) -> Option<EntityModel> {
                 "Horizon: custom entity model {path}: its texture {texture} is outside \
                  assets/minecraft/textures/, so not in the atlas: the vanilla one draws"
             );
-        } else if !root.join(texture).is_file() {
+        } else if !horizon_core::resource_fs::is_file(root.join(texture)) {
             log::warn!(
                 "Horizon: custom entity model {path}: its texture {texture} doesn't exist, \
                  so not in the atlas: the vanilla one draws"
@@ -73,11 +73,11 @@ pub fn load_jem(root: &Path, path: &str) -> Option<EntityModel> {
 /// A pack file's text, None when it's missing or larger than a model may read: its size is
 /// checked before anything is read.
 fn read_small(path: &Path) -> Option<String> {
-    let len = fs::metadata(path).ok()?.len();
+    let len = horizon_core::resource_fs::metadata(path).ok()?.len();
     if len > MAX_BYTES as u64 {
         return None;
     }
-    fs::read_to_string(path).ok()
+    horizon_core::resource_fs::read_to_string(path).ok()
 }
 
 /// The atlas name of a texture resource path: `assets/minecraft/textures/entity/x.png` is
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn emf_files_win_and_a_flat_file_beats_its_folder() {
         let root = std::env::temp_dir().join(format!("horizon-jem-files-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         for path in [
             // EMF's folder form over OptiFine's flat file.
             "optifine/cem/cow.jem",
@@ -107,11 +107,11 @@ mod tests {
             "optifine/cem/sheep/sheep.jem",
         ] {
             let path = root.join("assets/minecraft").join(path);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, "{}").unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "{}").unwrap();
         }
         let files = jem_files(&root);
-        fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
         let paths = |paths: &[&str]| {
             paths
                 .iter()

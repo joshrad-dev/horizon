@@ -23,7 +23,7 @@ use horizon_world::{
     movement_properties::MovementProperties,
     registry::BlockStateId,
 };
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, path::Path};
 
 /// A living entity is about to handle a fall (`LivingFallEvent`). Mods may
 /// change the distance and damage multiplier, or cancel fall handling.
@@ -40,8 +40,9 @@ pub fn native_living_fall(
 }
 
 pub fn load(root: &Path, properties: &MovementProperties<'_>) -> Result<BlockLandingRegistry> {
-    let raw: BTreeMap<String, serde_json::Value> =
-        serde_json::from_slice(&fs::read(root.join("landing-definitions.json"))?)?;
+    let raw: BTreeMap<String, serde_json::Value> = serde_json::from_slice(
+        &horizon_core::resource_fs::read(root.join("landing-definitions.json"))?,
+    )?;
     let mut definitions = BTreeMap::new();
     for (name, d) in raw {
         let float = |key: &str| -> Result<f32> {

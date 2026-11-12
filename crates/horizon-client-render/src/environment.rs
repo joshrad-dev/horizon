@@ -88,16 +88,20 @@ impl PackModifiers {
             root: Some(pack_root.to_path_buf()),
             ..Self::default()
         };
-        let Ok(namespaces) = std::fs::read_dir(pack_root.join("assets")) else {
+        let Ok(namespaces) = horizon_core::resource_fs::read_dir(pack_root.join("assets")) else {
             return out;
         };
         for namespace in namespaces.flatten() {
             for kind in ["biome_modifiers", "dimension_modifiers"] {
                 let mut stack = vec![namespace.path().join("polytone").join(kind)];
                 while let Some(dir) = stack.pop() {
-                    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                    for entry in horizon_core::resource_fs::read_dir(&dir)
+                        .into_iter()
+                        .flatten()
+                        .flatten()
+                    {
                         let path = entry.path();
-                        if path.is_dir() {
+                        if horizon_core::resource_fs::is_dir(&path) {
                             stack.push(path);
                             continue;
                         }
@@ -505,7 +509,7 @@ pub(crate) fn polytone_colormap_modifiers(
     pack_root: &Path,
 ) -> Vec<(bool, horizon_polytone::Targets, String)> {
     let mut out = Vec::new();
-    let namespaces = std::fs::read_dir(pack_root.join("assets"))
+    let namespaces = horizon_core::resource_fs::read_dir(pack_root.join("assets"))
         .into_iter()
         .flatten()
         .flatten();
@@ -513,9 +517,13 @@ pub(crate) fn polytone_colormap_modifiers(
         for (kind, fluid) in [("block_modifiers", false), ("fluid_modifiers", true)] {
             let mut stack = vec![namespace.path().join("polytone").join(kind)];
             while let Some(dir) = stack.pop() {
-                for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                for entry in horizon_core::resource_fs::read_dir(&dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
                     let path = entry.path();
-                    if path.is_dir() {
+                    if horizon_core::resource_fs::is_dir(&path) {
                         stack.push(path);
                         continue;
                     }

@@ -7,6 +7,8 @@ rust-version.workspace = true
 description = "The client's lowest layer: chat text and translations, SNBT and NBT paths, the scoreboard, boss bars, game rules and the registry and particle tables commands name"
 
 [dependencies]
+# Reads the prepared folder and packs through resource_fs (a packed folder: the iOS app's).
+horizon-core = { path = "../horizon-core" }
 horizon-world = { path = "../horizon-world" }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
 

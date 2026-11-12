@@ -24,7 +24,6 @@ use serde_json::Value;
 use std::{
     borrow::{Borrow, Cow},
     collections::HashMap,
-    fs,
     path::Path,
 };
 
@@ -644,12 +643,16 @@ impl StructureSpawns {
     pub fn load(root: &Path) -> Self {
         let mut overrides = FxHashMap::default();
         let dir = root.join("data/minecraft/worldgen/structure");
-        for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+        for entry in horizon_core::resource_fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
             let path = entry.path();
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
-            let Some(v) = fs::read(&path)
+            let Some(v) = horizon_core::resource_fs::read(&path)
                 .ok()
                 .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
             else {

@@ -1,8 +1,8 @@
 use super::*;
 
 fn png(path: &Path, w: u32, h: u32, color: [u8; 4]) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let mut encoder = png::Encoder::new(fs::File::create(path).unwrap(), w, h);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut encoder = png::Encoder::new(std::fs::File::create(path).unwrap(), w, h);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().unwrap();
@@ -17,8 +17,8 @@ fn fixture(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("horizon-glint-5851-{name}-{}", std::process::id()));
     let write = |name: &str, data: &[u8]| {
         let path = root.join(name);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, data).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, data).unwrap();
     };
     write("items.json", b"{}");
     write(
@@ -222,7 +222,7 @@ fn gui_glint_matches_pinned_vanilla_atlas_input() {
             [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]]
         );
     }
-    fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn glint_atlas_boundaries() {
     );
     assert_eq!(atlas["item/wide"].u0, atlas["missingno"].u0);
     assert!(glint_atlas::load(&root, 1, 16).is_err());
-    fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -290,19 +290,19 @@ fn invalid_and_generated_sprites_match_vanilla() {
         ("invalid_metadata", r#"{"animation":{"frames":"bad"}}"#),
         ("not_animated", r#"{"texture":{"blur":true}}"#),
     ] {
-        fs::write(
+        std::fs::write(
             root.join(format!("assets/minecraft/textures/item/{name}.png.mcmeta")),
             meta,
         )
         .unwrap();
     }
     let path = root.join("assets/minecraft/atlases/items.json");
-    let mut atlas: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let mut atlas: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     atlas["sources"].as_array_mut().unwrap().extend([
         serde_json::json!({"type":"single","resource":"test:absent","sprite":"test:missing_alias"}),
         serde_json::json!({"type":"paletted_permutations","textures":["test:trim"],"palette_key":"test:key","permutations":{"red":"test:red"}}),
     ]);
-    fs::write(path, atlas.to_string()).unwrap();
+    std::fs::write(path, atlas.to_string()).unwrap();
     for (name, w, h, color) in [
         ("trim", 8, 16, [255; 4]),
         ("palettes/key", 1, 1, [255; 4]),
@@ -335,7 +335,7 @@ fn invalid_and_generated_sprites_match_vanilla() {
         [19.0 / 128.0, 37.0 / 64.0, 27.0 / 128.0, 53.0 / 64.0]
     );
     assert!(!atlas.contains_key("test:missing_alias"));
-    fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn invalid_texture_metadata_does_not_move_book_glint() {
         r#"{"texture":{"clamp":1}}"#,
         r#"{"texture":{"alpha_cutoff_bias":"0.5"}}"#,
     ] {
-        fs::write(&metadata, invalid).unwrap();
+        std::fs::write(&metadata, invalid).unwrap();
         let atlas = glint_atlas::load(&root, 1, 16384).unwrap();
         let rejected = atlas["item/large"];
         let missing = atlas["missingno"];
@@ -370,7 +370,7 @@ fn invalid_texture_metadata_does_not_move_book_glint() {
         );
     }
     for strategy in ["auto", "mean", "cutout", "strict_cutout", "dark_cutout"] {
-        fs::write(
+        std::fs::write(
             &metadata,
             serde_json::json!({"texture":{"blur":true,"clamp":false,
                 "mipmap_strategy":strategy,"alpha_cutoff_bias":0.5}})
@@ -380,7 +380,7 @@ fn invalid_texture_metadata_does_not_move_book_glint() {
         let atlas = glint_atlas::load(&root, 1, 16384).unwrap();
         assert_eq!((atlas["item/large"].w, atlas["item/large"].h), (512, 256));
     }
-    fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -389,11 +389,11 @@ fn glint_atlas_reads_prepared_images_and_metadata_together() {
     let image = root.join("assets/minecraft/textures/item/large.png");
     png(&image, 512, 256, [255; 4]);
     let metadata = image.with_extension("png.mcmeta");
-    fs::write(&metadata, r#"{"texture":[]}"#).unwrap();
-    fs::write(root.join("horizon-resources.json"), "{}").unwrap();
+    std::fs::write(&metadata, r#"{"texture":[]}"#).unwrap();
+    std::fs::write(root.join("horizon-resources.json"), "{}").unwrap();
     horizon_core::prepared_files::write(&root).unwrap();
     // The renderer reads the prepared snapshot, even if loose files now differ.
-    fs::write(&metadata, r#"{"texture":{"blur":true}}"#).unwrap();
+    std::fs::write(&metadata, r#"{"texture":{"blur":true}}"#).unwrap();
     png(
         &root.join("assets/minecraft/textures/item/enchanted_book.png"),
         256,
@@ -407,7 +407,7 @@ fn glint_atlas_reads_prepared_images_and_metadata_together() {
         [book.u0, book.v0, book.u1, book.v1],
         [1.0 / 64.0, 33.0 / 64.0, 17.0 / 64.0, 49.0 / 64.0]
     );
-    fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -439,7 +439,7 @@ fn prepared_item_atlas_matches_pinned_vanilla() {
 fn external_item_atlas_oracle() {
     let root = PathBuf::from(std::env::var_os("HORIZON_GLINT_ROOT").expect("resource root"));
     let expected: Value = serde_json::from_str(
-        &fs::read_to_string(
+        &std::fs::read_to_string(
             std::env::var_os("HORIZON_GLINT_EXPECTED").expect("vanilla atlas JSON"),
         )
         .unwrap(),

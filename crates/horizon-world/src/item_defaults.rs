@@ -9,7 +9,7 @@
 use serde_json::{Map, Value};
 use std::{
     collections::BTreeMap,
-    fs, io,
+    io,
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, OnceLock, Weak},
 };
@@ -146,7 +146,7 @@ pub fn native_modify_default_components(item: &str, components: &mut Map<String,
 /// [`MAX_STACK_SIZE`], the count the wire and the save carry.
 pub fn read(root: &Path) -> io::Result<BTreeMap<String, Value>> {
     let mut items: BTreeMap<String, Value> =
-        serde_json::from_slice(&fs::read(root.join("items.json"))?)?;
+        serde_json::from_slice(&horizon_core::resource_fs::read(root.join("items.json"))?)?;
     for (item, components) in &mut items {
         if let Value::Object(components) = components {
             // A data pack's own value goes through vanilla's codec.

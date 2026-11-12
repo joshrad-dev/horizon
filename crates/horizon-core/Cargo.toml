@@ -12,6 +12,8 @@ rng-trace = []
 
 [dependencies]
 libm = "=0.2.16"
+# Reads the zstd frames of a packed `horizon-data.bin` (prepared_files.rs): pure Rust, decoding only.
+ruzstd = { version = "0.9", default-features = false, features = ["std"] }
 
 [[bin]]
 name = "horizon-parity"

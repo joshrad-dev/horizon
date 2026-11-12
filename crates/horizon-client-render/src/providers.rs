@@ -2,7 +2,7 @@
 //! fuel times, brewing times), evaluated from the data pack's JSON.
 use crate::items::{ItemStack, Items};
 use serde_json::Value;
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, path::Path};
 
 /// Evaluator for `context_int_provider` / `context_float_provider` values.
 pub struct Providers {
@@ -10,7 +10,7 @@ pub struct Providers {
     floats: HashMap<String, Value>,
 }
 fn load_dir(dir: &Path, prefix: &str, out: &mut HashMap<String, Value>) {
-    let Ok(entries) = fs::read_dir(dir) else {
+    let Ok(entries) = horizon_core::resource_fs::read_dir(dir) else {
         return;
     };
     for e in entries.flatten() {
@@ -20,9 +20,9 @@ fn load_dir(dir: &Path, prefix: &str, out: &mut HashMap<String, Value>) {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_owned();
-        if p.is_dir() {
+        if horizon_core::resource_fs::is_dir(&p) {
             load_dir(&p, &format!("{prefix}{name}/"), out);
-        } else if let Ok(bytes) = fs::read(&p)
+        } else if let Ok(bytes) = horizon_core::resource_fs::read(&p)
             && let Ok(v) = serde_json::from_slice(&bytes)
         {
             out.insert(format!("minecraft:{prefix}{name}"), v);

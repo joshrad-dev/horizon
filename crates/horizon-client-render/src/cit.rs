@@ -14,7 +14,6 @@ use horizon_optifine::{Properties, properties_files_in};
 use horizon_world::nbt::{JavaString, Tag, parse_snbt};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -29,7 +28,9 @@ pub fn load_rules(root: &Path) -> Vec<Rule> {
         .filter(|path| !path.ends_with("/cit.properties"))
         .filter_map(|path| {
             let props = read_properties(&root.join(&path))?;
-            let rule = Rule::parse(&path, &props, |p| root.join(p).is_file());
+            let rule = Rule::parse(&path, &props, |p| {
+                horizon_core::resource_fs::is_file(root.join(p))
+            });
             if rule.is_none() {
                 log::warn!("custom item textures: {path} is not a rule Horizon can read");
             }
@@ -44,7 +45,7 @@ pub fn load_rules(root: &Path) -> Vec<Rule> {
 /// else Latin-1 as Java reads them, so a pack saved that way still loads. `None` when it can't
 /// be read.
 pub fn read_properties(path: &Path) -> Option<Properties> {
-    let bytes = fs::read(path).ok()?;
+    let bytes = horizon_core::resource_fs::read(path).ok()?;
     let text = String::from_utf8(bytes)
         .unwrap_or_else(|e| e.into_bytes().iter().map(|&b| char::from(b)).collect());
     Some(Properties::parse_equals_first(&text))

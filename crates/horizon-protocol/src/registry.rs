@@ -64,7 +64,7 @@ impl crate::item::Names for SyncedNames<'_> {
 
 impl Builtin {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
+        let text = horizon_core::resource_fs::read_to_string(path)
             .map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
         Self::parse(&text)
     }
@@ -116,7 +116,9 @@ impl Builtin {
             resources.join("../../datagen/out/reports/registries.json"),
             resources.join("../datagen/out/reports/registries.json"),
         ];
-        candidates.into_iter().find(|p| p.is_file())
+        candidates
+            .into_iter()
+            .find(|p| horizon_core::resource_fs::is_file(p))
     }
 }
 

@@ -11,7 +11,7 @@ use crate::{
 use horizon_core::random::{LegacyRandom, RandomSource};
 use horizon_world::loot::PackOverlay;
 use serde_json::Value;
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 /// Everything the workstation menus read, loaded once with the resources.
 pub struct StationData {
@@ -881,15 +881,16 @@ fn parse_recipe_sources<'a>(
 
 fn load_trim_materials(root: &Path) -> Vec<(String, String)> {
     let mut trim_materials = Vec::new();
-    let mut tm: Vec<_> = fs::read_dir(root.join("data/minecraft/trim_material"))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .collect();
+    let mut tm: Vec<_> =
+        horizon_core::resource_fs::read_dir(root.join("data/minecraft/trim_material"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
     tm.sort();
     for p in tm {
-        if let Ok(bytes) = fs::read(&p)
+        if let Ok(bytes) = horizon_core::resource_fs::read(&p)
             && let Ok(v) = serde_json::from_slice::<Value>(&bytes)
         {
             let id = format!(
@@ -1443,8 +1444,8 @@ mod tests {
     #[test]
     fn grindstone_merge_at_the_default_max_damage_writes_no_component() {
         let root = std::env::temp_dir().join(format!("horizon-grind-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        fs::write(
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
             root.join("items.json"),
             r#"{"minecraft:diamond_sword":{"minecraft:max_stack_size":1,"minecraft:max_damage":1561}}"#,
         )
@@ -1469,7 +1470,7 @@ mod tests {
             out.data().unwrap().other("minecraft:max_damage"),
             Some(&horizon_world::nbt::Tag::Int(2000))
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Anvil: merging two damaged items reads each stack's own max damage.
@@ -2040,8 +2041,8 @@ mod tests {
     fn smithing_transform_overlay_matches_optional_inputs_and_takes_template_result() {
         use crate::{banner::Banners, brewing::Brewing, crafting::Recipes, creative::Names, menu};
         let root = std::env::temp_dir().join(format!("horizon-smithing-{}", std::process::id()));
-        fs::create_dir_all(root.join("data/minecraft/recipe")).unwrap();
-        fs::write(
+        std::fs::create_dir_all(root.join("data/minecraft/recipe")).unwrap();
+        std::fs::write(
             root.join("items.json"),
             r#"{
             "minecraft:stick":{"minecraft:max_stack_size":64},
@@ -2158,19 +2159,19 @@ mod tests {
                 "malformed {key} must not become optional"
             );
         }
-        fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn smithing_trim_reads_an_inline_pattern() {
         let root = std::env::temp_dir().join(format!("horizon-trim-{}", std::process::id()));
-        fs::create_dir_all(root.join("data/minecraft/recipe")).unwrap();
-        fs::write(
+        std::fs::create_dir_all(root.join("data/minecraft/recipe")).unwrap();
+        std::fs::write(
             root.join("items.json"),
             r#"{"minecraft:gold_ingot":{"minecraft:max_stack_size":64,"minecraft:provides_trim_material":"minecraft:gold"}}"#,
         )
         .unwrap();
-        fs::write(
+        std::fs::write(
             root.join("data/minecraft/recipe/coast.json"),
             serde_json::json!({
                 "type": "minecraft:smithing_trim",
@@ -2209,7 +2210,7 @@ mod tests {
                 decal: false,
             })
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -2233,15 +2234,15 @@ mod tests {
             std::process::id()
         ));
         let dir = root.join("data/minecraft/recipe");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(root.join("items.json"), r#"{"minecraft:stone":{}}"#).unwrap();
-        fs::write(
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(root.join("items.json"), r#"{"minecraft:stone":{}}"#).unwrap();
+        std::fs::write(
             dir.join("cut.json"),
             r#"{"type":"minecraft:stonecutting","ingredient":"minecraft:stone","result":{"id":"minecraft:stone","components":{"minecraft:custom_name":"Cut Stone"}}}"#,
         )
         .unwrap();
         let recipes = StationRecipes::load(&root, &sample_items(), &PackOverlay::NONE);
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let listed = recipes.stonecutter(&ItemStack::new("minecraft:stone", 1));
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].result.custom_name().as_deref(), Some("Cut Stone"));
@@ -2254,20 +2255,20 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("horizon-stonecutter-order-{}", std::process::id()));
         let dir = root.join("data/minecraft/recipe");
-        fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
         let cut = |result: &str| {
             format!(
                 r#"{{"type":"minecraft:stonecutting","ingredient":"minecraft:stone","result":{{"id":"{result}"}}}}"#
             )
         };
-        fs::write(dir.join("z_cut.json"), cut("minecraft:stone_slab")).unwrap();
-        fs::write(dir.join("b_cut.json"), cut("minecraft:stone_bricks")).unwrap();
+        std::fs::write(dir.join("z_cut.json"), cut("minecraft:stone_slab")).unwrap();
+        std::fs::write(dir.join("b_cut.json"), cut("minecraft:stone_bricks")).unwrap();
         let packs = [(
             "recipe/pack:a_cut".to_owned(),
             vec![cut("minecraft:stone_stairs").into_bytes()],
         )];
         let recipes = StationRecipes::load(&root, &sample_items(), &PackOverlay { files: &packs });
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let listed: Vec<_> = recipes
             .stonecutter(&ItemStack::new("minecraft:stone", 1))
             .iter()

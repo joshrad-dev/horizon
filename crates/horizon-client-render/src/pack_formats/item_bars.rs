@@ -30,7 +30,7 @@ impl crate::pack_palette::ItemBars for Bars {
 /// `<name>.png`) beside it. Colormap ids and inline colormaps aren't read. `None` without any.
 pub fn read(root: &Path) -> Option<Arc<dyn crate::pack_palette::ItemBars>> {
     let mut bars = Vec::new();
-    for namespace in std::fs::read_dir(root.join("assets"))
+    for namespace in horizon_core::resource_fs::read_dir(root.join("assets"))
         .into_iter()
         .flatten()
         .flatten()
@@ -38,9 +38,13 @@ pub fn read(root: &Path) -> Option<Arc<dyn crate::pack_palette::ItemBars>> {
         let base = namespace.path().join("polytone/item_modifiers");
         let mut stack = vec![base.clone()];
         while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            for entry in horizon_core::resource_fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
                 let path = entry.path();
-                if path.is_dir() {
+                if horizon_core::resource_fs::is_dir(&path) {
                     stack.push(path);
                 } else if let Some(bar) = item_bar(root, &base, &path) {
                     bars.push(bar);
@@ -65,7 +69,7 @@ fn item_bar(root: &Path, base: &Path, path: &Path) -> Option<DamageBar> {
     };
     if let Some(stem) = name.strip_suffix("_bar.png") {
         // A json of the same name owns its png.
-        if path.with_file_name(format!("{stem}.json")).exists() {
+        if horizon_core::resource_fs::exists(path.with_file_name(format!("{stem}.json"))) {
             return None;
         }
         let relative = path.parent()?.strip_prefix(base).ok()?.join(stem);
@@ -85,7 +89,7 @@ fn item_bar(root: &Path, base: &Path, path: &Path) -> Option<DamageBar> {
     let png = [format!("{stem}_bar.png"), format!("{stem}.png")]
         .into_iter()
         .map(|png| path.with_file_name(png))
-        .find(|png| png.exists())?;
+        .find(|png| horizon_core::resource_fs::exists(png))?;
     let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
     let implicit = horizon_polytone::implicit_id(&relative, "item_modifiers");
     let targets =

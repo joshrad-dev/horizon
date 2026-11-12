@@ -363,7 +363,7 @@ impl Skies {
         for ns in ["minecraft"] {
             for top in ["optifine", "mcpatcher"] {
                 let base = format!("assets/{ns}/{top}/sky");
-                let Ok(dirs) = std::fs::read_dir(root.join(&base)) else {
+                let Ok(dirs) = horizon_core::resource_fs::read_dir(root.join(&base)) else {
                     continue;
                 };
                 for dir in dirs.flatten() {
@@ -394,7 +394,7 @@ impl WorldSky {
     /// The layers and bodies of the folder at resource path `dir`.
     fn scan(root: &Path, dir: &str) -> Self {
         let read = |file: &str| {
-            std::fs::read_to_string(root.join(file))
+            horizon_core::resource_fs::read_to_string(root.join(file))
                 .ok()
                 .map(|t| Properties::parse(&t))
         };
@@ -414,7 +414,9 @@ impl WorldSky {
             };
             let Some(p) = read(&file) else { continue };
             match SkyLayer::parse(&file, &p) {
-                Some(layer) if root.join(&layer.source).is_file() => layers.push((n, layer)),
+                Some(layer) if horizon_core::resource_fs::is_file(root.join(&layer.source)) => {
+                    layers.push((n, layer))
+                }
                 Some(layer) => log::warn!("{file}: no texture {}", layer.source),
                 None => log::warn!("{file}: unknown blend or bad source; skipped"),
             }
@@ -427,7 +429,7 @@ impl WorldSky {
                 Some(s) => with_png(&resolve(&props, s)?),
                 None => format!("{dir}/{name}.png"),
             };
-            if !root.join(&source).is_file() {
+            if !horizon_core::resource_fs::is_file(root.join(&source)) {
                 return None;
             }
             let blend = p

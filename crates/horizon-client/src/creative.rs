@@ -5,7 +5,6 @@ use crate::{Result, enchant::Enchantments, items::ItemStack, lang, ui::EditBox};
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    fs,
     path::Path,
     sync::{Arc, Mutex, OnceLock},
 };
@@ -143,10 +142,12 @@ pub struct Names {
 impl Names {
     pub fn load(root: &Path) -> Self {
         let read = |namespace: &str| {
-            fs::read(root.join(format!("assets/{namespace}/lang/en_us.json")))
-                .ok()
-                .and_then(|b| serde_json::from_slice::<HashMap<String, String>>(&b).ok())
-                .unwrap_or_default()
+            horizon_core::resource_fs::read(
+                root.join(format!("assets/{namespace}/lang/en_us.json")),
+            )
+            .ok()
+            .and_then(|b| serde_json::from_slice::<HashMap<String, String>>(&b).ok())
+            .unwrap_or_default()
         };
         let mut map = read("minecraft");
         // Content mods' names (docs/modpacks.md); none in a vanilla root.
@@ -267,10 +268,12 @@ impl Creative {
     /// prepared before it fall back to `creative-tabs.json`'s item ids.
     pub fn load(root: &Path) -> Result<Self> {
         let path = root.join("creative-inventory.json");
-        if path.exists() {
-            Self::from_json(&serde_json::from_slice(&fs::read(path)?)?)
+        if horizon_core::resource_fs::exists(&path) {
+            Self::from_json(&serde_json::from_slice(&horizon_core::resource_fs::read(
+                path,
+            )?)?)
         } else {
-            Self::from_legacy(&serde_json::from_slice(&fs::read(
+            Self::from_legacy(&serde_json::from_slice(&horizon_core::resource_fs::read(
                 root.join("creative-tabs.json"),
             )?)?)
         }

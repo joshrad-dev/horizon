@@ -10,7 +10,7 @@ use horizon_core::geometry::trig;
 use horizon_protocol::packets::play::{
     TrackedWaypoint, WaypointId, WaypointTarget, waypoint_operation,
 };
-use std::{borrow::Cow, collections::HashMap, fs, path::Path};
+use std::{borrow::Cow, collections::HashMap, path::Path};
 
 /// `WaypointStyle`: the sprites (under `hud/locator_bar_dot/`) from near to far.
 #[derive(Clone, Debug, PartialEq)]
@@ -90,13 +90,16 @@ pub struct SpriteFrames {
 impl SpriteFrames {
     /// None for a still sprite or invalid metadata.
     fn load(png: &Path) -> Option<Self> {
-        let text = fs::read_to_string(png.with_extension("png.mcmeta")).ok()?;
+        let text =
+            horizon_core::resource_fs::read_to_string(png.with_extension("png.mcmeta")).ok()?;
         let meta: HashMap<String, Box<serde_json::value::RawValue>> =
             serde_json::from_str(&text).ok()?;
         let animation = AnimationMetadata::from_json(meta.get("animation")?.get()).ok()?;
         // The PNG header: width and height at bytes 16..24 of IHDR.
-        let mut header = [0u8; 24];
-        std::io::Read::read_exact(&mut fs::File::open(png).ok()?, &mut header).ok()?;
+        let header: [u8; 24] = horizon_core::prepared_files::read_head(png, 24)
+            .ok()?
+            .try_into()
+            .ok()?;
         let dim = |at: usize| i32::from_be_bytes(header[at..at + 4].try_into().unwrap_or_default());
         let image = [dim(16), dim(20)];
         let frame = animation.frame_size(image[0], image[1]);
@@ -131,7 +134,7 @@ impl WaypointStyles {
     pub fn load(root: &Path) -> Self {
         let mut frames = HashMap::new();
         let hud = root.join("assets/minecraft/textures/gui/sprites/hud");
-        let dots = fs::read_dir(hud.join("locator_bar_dot"))
+        let dots = horizon_core::resource_fs::read_dir(hud.join("locator_bar_dot"))
             .into_iter()
             .flatten()
             .flatten()
@@ -152,13 +155,13 @@ impl WaypointStyles {
             frames.insert(name, f);
         }
         let mut out = HashMap::new();
-        for ns in fs::read_dir(root.join("assets"))
+        for ns in horizon_core::resource_fs::read_dir(root.join("assets"))
             .into_iter()
             .flatten()
             .flatten()
         {
             let namespace = ns.file_name().to_string_lossy().into_owned();
-            for f in fs::read_dir(ns.path().join("waypoint_style"))
+            for f in horizon_core::resource_fs::read_dir(ns.path().join("waypoint_style"))
                 .into_iter()
                 .flatten()
                 .flatten()
@@ -168,7 +171,7 @@ impl WaypointStyles {
                     continue;
                 }
                 let name = path.file_stem().unwrap_or_default().to_string_lossy();
-                if let Some(style) = fs::read_to_string(&path)
+                if let Some(style) = horizon_core::resource_fs::read_to_string(&path)
                     .ok()
                     .and_then(|t| WaypointStyle::parse(&t))
                 {

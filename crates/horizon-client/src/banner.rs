@@ -5,7 +5,7 @@
 use crate::{block_entity_render::DYES, items::ItemStack, items::Items};
 use horizon_world::nbt::Tag;
 use serde_json::Value;
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 pub use horizon_items::banner_layer::{BannerLayer, layers_from_nbt, layers_to_nbt};
 
@@ -43,7 +43,7 @@ fn read_tag(root: &Path, name: &str, depth: u32) -> Vec<Arc<str>> {
         "data/minecraft/tags/banner_pattern/{}.json",
         name.trim_start_matches("minecraft:")
     ));
-    let Some(v) = fs::read(path)
+    let Some(v) = horizon_core::resource_fs::read(path)
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
     else {
@@ -71,19 +71,20 @@ impl Banners {
         defaults: Option<&horizon_world::item_defaults::Defaults>,
     ) -> Self {
         let mut banners = Self::default();
-        let mut files: Vec<_> = fs::read_dir(root.join("data/minecraft/banner_pattern"))
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|e| e == "json"))
-            .collect();
+        let mut files: Vec<_> =
+            horizon_core::resource_fs::read_dir(root.join("data/minecraft/banner_pattern"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e == "json"))
+                .collect();
         files.sort();
         for path in files {
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
-            let Some(v) = fs::read(&path)
+            let Some(v) = horizon_core::resource_fs::read(&path)
                 .ok()
                 .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
             else {
@@ -105,13 +106,13 @@ impl Banners {
         let tags = root.join("data/minecraft/tags/banner_pattern");
         let mut dirs = vec![tags.clone()];
         while let Some(dir) = dirs.pop() {
-            for path in fs::read_dir(dir)
+            for path in horizon_core::resource_fs::read_dir(dir)
                 .into_iter()
                 .flatten()
                 .flatten()
                 .map(|e| e.path())
             {
-                if path.is_dir() {
+                if horizon_core::resource_fs::is_dir(&path) {
                     dirs.push(path);
                 } else if path.extension().is_some_and(|e| e == "json")
                     && let Some(name) = path

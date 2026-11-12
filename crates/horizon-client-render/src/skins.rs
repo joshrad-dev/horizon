@@ -1049,7 +1049,7 @@ impl Downloader {
         let file = self
             .resource_root
             .join(format!("assets/{namespace}/textures/{path}.png"));
-        let image = std::fs::read(file)
+        let image = horizon_core::resource_fs::read(file)
             .ok()
             .and_then(|b| crate::hud::decode_bytes(&b).ok())
             .and_then(|(w, h, rgba)| resample_64(w, h, &rgba));

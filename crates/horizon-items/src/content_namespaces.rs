@@ -1,6 +1,6 @@
 //! The namespaces content mods add to a resource root, which loaders read
 //! besides `minecraft`.
-use std::{fs, path::Path};
+use std::path::Path;
 
 /// In a root built here: the namespaces the content mods own (their ids and
 /// listed namespaces), which loaders read besides `minecraft`.
@@ -9,7 +9,7 @@ pub const MARKER: &str = "horizon-mod-content.json";
 /// The content mods' namespaces in a root built by `mod_content::build`; none in any
 /// other root, so vanilla's loaders read exactly what they did.
 pub fn namespaces(root: &Path) -> Vec<String> {
-    fs::read(root.join(MARKER))
+    horizon_core::resource_fs::read(root.join(MARKER))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or_default()
@@ -36,7 +36,7 @@ pub const MOD_IDS_MARKER: &str = "horizon-mod-ids.json";
 /// The content mods' ids in a root built by `mod_content::build`; none in
 /// any other root.
 pub fn mod_ids(root: &Path) -> Vec<String> {
-    fs::read(root.join(MOD_IDS_MARKER))
+    horizon_core::resource_fs::read(root.join(MOD_IDS_MARKER))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or_default()

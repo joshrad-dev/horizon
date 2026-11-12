@@ -6,7 +6,7 @@
 //! those bytes for as long as one of them holds the [`Folder`], then it is
 //! gone (nothing is kept past the load).
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, OnceLock, Weak},
 };
@@ -67,7 +67,7 @@ fn read_uncached(dir: &Path) -> io::Result<Arc<Folder>> {
         None => list(dir)?
             .into_iter()
             .map(|(name, path)| {
-                let bytes = fs::read(&path)
+                let bytes = horizon_core::resource_fs::read(&path)
                     .map(Vec::into_boxed_slice)
                     .map_err(|e| (e.kind(), e.to_string()));
                 File { name, path, bytes }
@@ -159,7 +159,7 @@ fn prepared(dir: &Path) -> Option<Vec<File>> {
 /// what it found.
 pub fn list(dir: &Path) -> io::Result<Vec<(String, PathBuf)>> {
     let mut files = Vec::new();
-    let mut stack = vec![fs::read_dir(dir)?];
+    let mut stack = vec![horizon_core::resource_fs::read_dir(dir)?];
     while let Some(entries) = stack.pop() {
         for entry in entries {
             let entry = match entry {
@@ -170,8 +170,8 @@ pub fn list(dir: &Path) -> io::Result<Vec<(String, PathBuf)>> {
                 }
             };
             let path = entry.path();
-            if path.is_dir() {
-                match fs::read_dir(&path) {
+            if horizon_core::resource_fs::is_dir(&path) {
+                match horizon_core::resource_fs::read_dir(&path) {
                     Ok(list) => stack.push(list),
                     Err(e) => log::warn!("Horizon: failed to list {}: {e}", path.display()),
                 }
@@ -202,11 +202,11 @@ mod tests {
     fn folder(tag: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("horizon-json-folder-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("brewing")).unwrap();
-        fs::write(dir.join("stick.json"), b"{\"a\":1}").unwrap();
-        fs::write(dir.join("brewing/awkward.json"), b"{}").unwrap();
-        fs::write(dir.join("notes.txt"), b"not json").unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("brewing")).unwrap();
+        std::fs::write(dir.join("stick.json"), b"{\"a\":1}").unwrap();
+        std::fs::write(dir.join("brewing/awkward.json"), b"{}").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"not json").unwrap();
         dir
     }
 
@@ -218,13 +218,13 @@ mod tests {
         assert_eq!(names, ["brewing/awkward", "stick"]);
         assert_eq!(first.files[1].bytes().unwrap(), b"{\"a\":1}");
         // Held: a change on the disk isn't seen, the copy read is shared.
-        fs::write(dir.join("stick.json"), b"{\"a\":2}").unwrap();
+        std::fs::write(dir.join("stick.json"), b"{\"a\":2}").unwrap();
         let second = read(&dir).unwrap();
         assert!(Arc::ptr_eq(&first, &second));
         drop((first, second));
         // Let go: the next reader reads the folder again.
         assert_eq!(read(&dir).unwrap().files[1].bytes().unwrap(), b"{\"a\":2}");
-        fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Under a prepared root with a `horizon-data.bin`, the folder is read
@@ -233,14 +233,14 @@ mod tests {
     fn a_prepared_root_reads_the_folder_from_its_data_file() {
         let root =
             std::env::temp_dir().join(format!("horizon-json-folder-root-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let recipes = root.join("data/minecraft/recipe");
-        fs::create_dir_all(recipes.join("crushing")).unwrap();
-        fs::write(root.join("horizon-resources.json"), b"{}").unwrap();
-        fs::write(recipes.join("crushing.json"), b"{\"c\":0}").unwrap();
-        fs::write(recipes.join("crushing/iron.json"), b"{\"c\":1}").unwrap();
-        fs::write(recipes.join("stick.json"), b"{\"a\":1}").unwrap();
-        fs::write(recipes.join("notes.txt"), b"not json").unwrap();
+        std::fs::create_dir_all(recipes.join("crushing")).unwrap();
+        std::fs::write(root.join("horizon-resources.json"), b"{}").unwrap();
+        std::fs::write(recipes.join("crushing.json"), b"{\"c\":0}").unwrap();
+        std::fs::write(recipes.join("crushing/iron.json"), b"{\"c\":1}").unwrap();
+        std::fs::write(recipes.join("stick.json"), b"{\"a\":1}").unwrap();
+        std::fs::write(recipes.join("notes.txt"), b"not json").unwrap();
         let from_folder: Vec<_> = list(&recipes)
             .unwrap()
             .into_iter()
@@ -248,7 +248,7 @@ mod tests {
             .collect();
         horizon_core::prepared_files::write(&root).unwrap();
         // Only the data file still has the stick's first bytes.
-        fs::write(recipes.join("stick.json"), b"{\"a\":2}").unwrap();
+        std::fs::write(recipes.join("stick.json"), b"{\"a\":2}").unwrap();
         let folder = read(&recipes).unwrap();
         let names: Vec<_> = folder.files.iter().map(|f| f.name.clone()).collect();
         assert_eq!(names, from_folder);
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(folder.files[2].bytes().unwrap(), b"{\"a\":1}");
         assert_eq!(folder.files[2].path, recipes.join("stick.json"));
         drop(folder);
-        fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

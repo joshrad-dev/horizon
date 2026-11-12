@@ -1485,7 +1485,7 @@ impl Recipes {
         }
         for namespace in crate::mod_content::namespaces(root) {
             let dir = root.join(format!("data/{namespace}/recipe"));
-            if dir.is_dir() {
+            if horizon_core::resource_fs::is_dir(&dir) {
                 for file in &crate::json_folder::read(&dir)?.files {
                     sources.push((format!("{namespace}:{}", file.name), file.bytes()?.to_vec()));
                 }

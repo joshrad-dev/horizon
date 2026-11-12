@@ -127,8 +127,9 @@ impl ArmorStandAssets {
         let namespaces = std::iter::once("minecraft".to_owned())
             .chain(horizon_client::mod_content::namespaces(root));
         for namespace in namespaces {
-            let Ok(entries) = std::fs::read_dir(root.join(format!("assets/{namespace}/equipment")))
-            else {
+            let Ok(entries) = horizon_core::resource_fs::read_dir(
+                root.join(format!("assets/{namespace}/equipment")),
+            ) else {
                 continue;
             };
             for e in entries.flatten() {
@@ -136,8 +137,8 @@ impl ArmorStandAssets {
                 let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
                     continue;
                 };
-                let Ok(v) =
-                    std::fs::read(&path).map(|b| serde_json::from_slice::<serde_json::Value>(&b))
+                let Ok(v) = horizon_core::resource_fs::read(&path)
+                    .map(|b| serde_json::from_slice::<serde_json::Value>(&b))
                 else {
                     continue;
                 };

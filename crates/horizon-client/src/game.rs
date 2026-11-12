@@ -12327,6 +12327,9 @@ pub fn run_with() -> Result<()> {
         horizon_client::spans::record_here(true);
     }
     let vanilla_root = options.resources.clone();
+    // A packed folder (the iOS app's, prepared_files.rs) is read from its file from the start:
+    // the folder holds only the sounds beside it.
+    horizon_core::prepared_files::open(&vanilla_root);
     // Saves from before 1.13 upgrade with vanilla's tables, prepared from the player's jar.
     horizon_world::datafix::set_resources(
         &std::path::absolute(&vanilla_root).unwrap_or_else(|_| vanilla_root.clone()),

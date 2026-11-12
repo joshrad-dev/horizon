@@ -21,6 +21,14 @@
 //!   pool, data offset (u64, from the start of the file) and length (u64);
 //! - the name pool: `/`-separated paths from the root;
 //! - the files' bytes.
+//!
+//! A packed file (version 3, `write_packed`) is the whole prepared folder for a
+//! device that ships it read-only and can't spare its size (the iOS app): it
+//! holds every file but the sounds and `horizon-resources.json`, each as a zstd
+//! frame where that is smaller, so the folder keeps only those beside it. Its
+//! entries add the file's length once read (u64), and its root's path is empty:
+//! the app's folder moves with every install. A reader of a packed root never
+//! falls back to the folder for what the file doesn't hold.
 use std::{
     fs::{self, File},
     io::{self, BufWriter, Read, Write},
@@ -41,8 +49,12 @@ const FOLDERS: [&str; 3] = ["data", "assets", "worldgen/structure"];
 const MAGIC: [u8; 8] = *b"HZDATA\0\0";
 /// 2: `worldgen/structure` joined the folders (a version 1 file lacks it).
 const VERSION: u32 = 2;
+/// A packed file (`write_packed`).
+const PACKED_VERSION: u32 = 3;
 const HEADER: usize = 40;
 const ENTRY: usize = 24;
+/// A packed file's entry: [`ENTRY`] and the file's length once read.
+const PACKED_ENTRY: usize = 32;
 
 /// Whether `name` (from the root) is a file this holds: under its folders,
 /// and not a sound (hundreds of MB, read one at a time while playing).
@@ -57,21 +69,62 @@ fn holds_folder(dir: &str) -> bool {
         .any(|f| dir == *f || dir.strip_prefix(f).is_some_and(|r| r.starts_with('/')))
 }
 
+/// Whether a packed file holds `name` (from the root): everything but the
+/// sounds (read while playing, a file at a time), the zip files (the built-in
+/// resource packs, read with seeks), the file it is checked against, and itself.
+fn packs_file(name: &str) -> bool {
+    !name.ends_with(".ogg")
+        && !name.ends_with(".zip")
+        && name != SOURCE
+        && !name.starts_with(FILE_NAME)
+}
+
 struct Entry {
     name: (u32, u32),
     data: (u64, u64),
+    /// The file's length once read: `data.1` unless it is a zstd frame.
+    len: u64,
 }
 
 /// An open `horizon-data.bin`.
 pub struct PreparedFiles {
-    file: File,
+    pub(crate) file: File,
     names: Box<str>,
     entries: Box<[Entry]>,
+    /// A packed file: it holds the whole folder (`write_packed`).
+    packed: bool,
 }
 
 impl PreparedFiles {
     fn name(&self, entry: &Entry) -> &str {
         &self.names[entry.name.0 as usize..][..entry.name.1 as usize]
+    }
+    /// Whether `name` (from the root) is a file this holds, or would hold: one
+    /// it doesn't have is missing, not read from the folder.
+    pub(crate) fn holds_file(&self, name: &str) -> bool {
+        if self.packed {
+            packs_file(name)
+        } else {
+            holds_file(name)
+        }
+    }
+    /// Whether `dir` (from the root, `""` for the root) is a folder this lists.
+    fn holds_folder(&self, dir: &str) -> bool {
+        self.packed || holds_folder(dir)
+    }
+    /// Whether this holds the whole folder (`write_packed`).
+    pub fn packed(&self) -> bool {
+        self.packed
+    }
+    /// The index of `name`'s entry.
+    pub(crate) fn entry(&self, name: &str) -> Option<usize> {
+        self.entries
+            .binary_search_by(|e| self.name(e).cmp(name))
+            .ok()
+    }
+    /// The length of `name` once read; `None` when this doesn't have it.
+    pub fn len(&self, name: &str) -> Option<u64> {
+        self.entry(name).map(|i| self.entries[i].len)
     }
     /// The bytes of `name` (`/`-separated, from the root); `None` when this
     /// doesn't hold it (read it from the folder).
@@ -80,22 +133,65 @@ impl PreparedFiles {
     }
     /// At most the first `max` bytes of `name`, as [`PreparedFiles::read`].
     pub fn read_head(&self, name: &str, max: u64) -> Option<io::Result<Vec<u8>>> {
-        let i = self
+        let entry = &self.entries[self.entry(name)?];
+        let (offset, stored) = entry.data;
+        if stored == entry.len {
+            let mut bytes = vec![0; stored.min(max) as usize];
+            return Some(read_at(&self.file, &mut bytes, offset).map(|()| bytes));
+        }
+        // A zstd frame: the whole file is decoded, then cut to `max`.
+        let mut frame = vec![0; stored as usize];
+        Some(
+            read_at(&self.file, &mut frame, offset)
+                .and_then(|()| unzstd(&frame, entry.len))
+                .map(|mut bytes| {
+                    bytes.truncate(max.min(entry.len) as usize);
+                    bytes
+                }),
+        )
+    }
+    /// The names of the files and folders directly in `dir` (from the root,
+    /// `""` for the root), in name order, each with whether it is a folder;
+    /// `None` when this doesn't list that folder or holds nothing in it.
+    pub fn children(&self, dir: &str) -> Option<Vec<(&str, bool)>> {
+        if !self.holds_folder(dir) {
+            return None;
+        }
+        let prefix = if dir.is_empty() {
+            String::new()
+        } else {
+            format!("{dir}/")
+        };
+        let start = self
             .entries
-            .binary_search_by(|e| self.name(e).cmp(name))
-            .ok()?;
-        let (offset, len) = self.entries[i].data;
-        let mut bytes = vec![0; len.min(max) as usize];
-        Some(read_at(&self.file, &mut bytes, offset).map(|()| bytes))
+            .partition_point(|e| self.name(e) < prefix.as_str());
+        let mut children: Vec<(&str, bool)> = Vec::new();
+        for entry in &self.entries[start..] {
+            let Some(rest) = self.name(entry).strip_prefix(prefix.as_str()) else {
+                break;
+            };
+            let child = match rest.split_once('/') {
+                Some((folder, _)) => (folder, true),
+                None => (rest, false),
+            };
+            if children.last() != Some(&child) {
+                children.push(child);
+            }
+        }
+        (!children.is_empty()).then_some(children)
     }
     /// The files under `dir` (`/`-separated, from the root) and its
     /// subfolders, in name order, by their names from the root; `None` when
     /// this doesn't hold that folder or has no file in it (list the folder).
     pub fn list(&self, dir: &str) -> Option<Vec<&str>> {
-        if !holds_folder(dir) {
+        if !self.holds_folder(dir) {
             return None;
         }
-        let prefix = format!("{dir}/");
+        let prefix = if dir.is_empty() {
+            String::new()
+        } else {
+            format!("{dir}/")
+        };
         let start = self
             .entries
             .partition_point(|e| self.name(e) < prefix.as_str());
@@ -118,12 +214,18 @@ impl PreparedFiles {
         file.read_exact(&mut header)?;
         let u32_at = |at: usize| u32::from_le_bytes(header[at..at + 4].try_into().unwrap());
         let u64_at = |at: usize| u64::from_le_bytes(header[at..at + 8].try_into().unwrap());
-        if header[..8] != MAGIC || u32_at(8) != VERSION {
+        let packed = match u32_at(8) {
+            VERSION => false,
+            PACKED_VERSION => true,
+            _ => return Ok(None),
+        };
+        if header[..8] != MAGIC {
             return Ok(None);
         }
+        let entry_len = if packed { PACKED_ENTRY } else { ENTRY };
         let (count, root_len, source_len, pool_len) =
             (u32_at(12) as u64, u64_at(16), u64_at(24), u64_at(32));
-        let index_len = count * ENTRY as u64;
+        let index_len = count * entry_len as u64;
         let index_end = HEADER as u64 + pad(root_len) + pad(source_len) + index_len + pad(pool_len);
         if index_end > size {
             return Ok(None);
@@ -133,28 +235,29 @@ impl PreparedFiles {
         let (written_root, rest) = index.split_at(pad(root_len) as usize);
         let (source, rest) = rest.split_at(pad(source_len) as usize);
         let (raw_entries, pool) = rest.split_at(index_len as usize);
-        if written_root[..root_len as usize]
-            != *fs::canonicalize(root)?.as_os_str().as_encoded_bytes()
-            || source[..source_len as usize] != *fs::read(root.join(SOURCE))?
-        {
+        // A packed file names no root: it is used where it is.
+        let other_root = !packed
+            && written_root[..root_len as usize]
+                != *fs::canonicalize(root)?.as_os_str().as_encoded_bytes();
+        if other_root || source[..source_len as usize] != *fs::read(root.join(SOURCE))? {
             return Ok(None);
         }
         let Ok(names) = std::str::from_utf8(&pool[..pool_len as usize]) else {
             return Ok(None);
         };
         let entries: Box<[Entry]> = raw_entries
-            .as_chunks::<ENTRY>()
-            .0
-            .iter()
+            .chunks_exact(entry_len)
             .map(|e| {
                 let at = |i: usize, n: usize| {
                     let mut b = [0; 8];
                     b[..n].copy_from_slice(&e[i..i + n]);
                     u64::from_le_bytes(b)
                 };
+                let data = (at(8, 8), at(16, 8));
                 Entry {
                     name: (at(0, 4) as u32, at(4, 4) as u32),
-                    data: (at(8, 8), at(16, 8)),
+                    data,
+                    len: if packed { at(24, 8) } else { data.1 },
                 }
             })
             .collect();
@@ -162,6 +265,7 @@ impl PreparedFiles {
             file,
             names: names.into(),
             entries,
+            packed,
         };
         // Every name in the pool, in strict order; every file's bytes inside the file.
         let mut last: Option<&str> = None;
@@ -203,12 +307,129 @@ pub fn open(root: &Path) -> Option<Arc<PreparedFiles>> {
         }
     };
     opened.push((root.to_owned(), files.clone()));
+    if let Some(files) = files.as_ref().filter(|f| f.packed) {
+        register(root, files.clone(), None);
+    }
     files
+}
+
+/// A root read through a packed file: the packed folder itself, or a resource
+/// packs' mirror of it ([`open_overlay`]), whose own files sit on the disk over it.
+struct Registered {
+    root: PathBuf,
+    files: Arc<PreparedFiles>,
+    overlay: Option<Overlay>,
+}
+
+/// A mirror's packed folder below it, and that folder's files its packs hide.
+#[derive(Clone)]
+pub(crate) struct Overlay {
+    pub(crate) vanilla: PathBuf,
+    pub(crate) hidden: Arc<std::collections::BTreeSet<String>>,
+}
+
+/// A path under a registered root: the file that holds the root, the path from
+/// it, and whether the root is a mirror over it.
+pub(crate) struct Found {
+    pub(crate) files: Arc<PreparedFiles>,
+    pub(crate) rel: String,
+    pub(crate) overlay: Option<Overlay>,
+}
+
+/// The packed roots and the mirrors over them, by their paths as given and canonical.
+static PACKED: std::sync::RwLock<Vec<Registered>> = std::sync::RwLock::new(Vec::new());
+
+/// Registers `root` (in place of an earlier registration of it).
+fn register(root: &Path, files: Arc<PreparedFiles>, overlay: Option<Overlay>) {
+    let mut roots = vec![root.to_owned()];
+    if let Ok(canonical) = fs::canonicalize(root)
+        && canonical != root
+    {
+        roots.push(canonical);
+    }
+    let mut packed = PACKED.write().unwrap_or_else(PoisonError::into_inner);
+    packed.retain(|r| !roots.contains(&r.root));
+    for root in roots {
+        packed.push(Registered {
+            root,
+            files: files.clone(),
+            overlay: overlay.clone(),
+        });
+    }
+}
+
+/// The registered root `path` is in.
+pub(crate) fn lookup(path: &Path) -> Option<Found> {
+    let packed = PACKED.read().unwrap_or_else(PoisonError::into_inner);
+    // The deepest root first: a mirror may sit inside the game's folder, under nothing else.
+    packed
+        .iter()
+        .filter_map(|r| {
+            let rel = path.strip_prefix(&r.root).ok()?;
+            let rel = rel.to_str()?.replace(std::path::MAIN_SEPARATOR, "/");
+            Some((r.root.components().count(), r, rel))
+        })
+        .max_by_key(|(depth, _, _)| *depth)
+        .map(|(_, r, rel)| Found {
+            files: r.files.clone(),
+            rel,
+            overlay: r.overlay.clone(),
+        })
+}
+
+/// The file in a resource packs' mirror of a packed folder that says so: the
+/// packed folder's path on its first line, then the files of that folder its
+/// packs hide, one a line.
+pub const OVERLAY_FILE: &str = "horizon-overlay.txt";
+
+/// Writes `out`'s [`OVERLAY_FILE`]: `out` mirrors the packed folder `vanilla`
+/// with the packs' files on its disk, and `hidden` of vanilla's files are not there.
+pub fn write_overlay(out: &Path, vanilla: &Path, hidden: &[String]) -> io::Result<()> {
+    let vanilla = std::path::absolute(vanilla)?;
+    let mut text = vanilla
+        .to_str()
+        .ok_or_else(|| io::Error::other("the packed folder's path is not UTF-8"))?
+        .to_owned();
+    for name in hidden {
+        text.push('\n');
+        text.push_str(name);
+    }
+    fs::write(out.join(OVERLAY_FILE), text)
+}
+
+/// Reads `out` as the mirror its [`OVERLAY_FILE`] describes from now on: a file
+/// on its disk first, else the packed folder's (unless hidden). False when `out`
+/// is not a mirror of a packed folder.
+pub fn open_overlay(out: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(out.join(OVERLAY_FILE)) else {
+        return false;
+    };
+    let mut lines = text.lines();
+    let Some(vanilla) = lines.next().map(PathBuf::from) else {
+        return false;
+    };
+    let Some(files) = open(&vanilla).filter(|f| f.packed) else {
+        return false;
+    };
+    let hidden = lines.map(str::to_owned).collect();
+    register(
+        out,
+        files,
+        Some(Overlay {
+            vanilla,
+            hidden: Arc::new(hidden),
+        }),
+    );
+    true
 }
 
 /// The file holding `path` (a file or folder under a prepared root) and
 /// `path` from that root; `None` when no root above it has a usable file.
 pub fn find(path: &Path) -> Option<(Arc<PreparedFiles>, String)> {
+    if let Some(found) = lookup(path) {
+        // A mirror's files are its disk's and the packed folder's together.
+        return found.overlay.is_none().then_some((found.files, found.rel));
+    }
     path.ancestors().skip(1).find_map(|root| {
         // Only a root holding one of the folders: no lookup for other paths.
         let rel = path.strip_prefix(root).ok()?;
@@ -223,8 +444,11 @@ pub fn find(path: &Path) -> Option<(Arc<PreparedFiles>, String)> {
 /// asking the disk: a texture's `.mcmeta` or LabPBR maps, mostly absent);
 /// else from the disk.
 pub fn read(path: &Path) -> io::Result<Vec<u8>> {
+    if lookup(path).is_some() {
+        return crate::resource_fs::read(path);
+    }
     match find(path) {
-        Some((files, rel)) if holds_file(&rel) => files
+        Some((files, rel)) if files.holds_file(&rel) => files
             .read(&rel)
             .unwrap_or_else(|| Err(io::ErrorKind::NotFound.into())),
         _ => fs::read(path),
@@ -236,6 +460,9 @@ pub fn read(path: &Path) -> io::Result<Vec<u8>> {
 /// without listing the disk: empty when it holds none there. `None` when no
 /// data file holds `dir` (walk the folder).
 pub fn files_under(dir: &Path) -> Option<Vec<String>> {
+    if lookup(dir).is_some() {
+        return crate::resource_fs::files_under(dir);
+    }
     let (files, rel) = find(dir)?;
     let names = files.list(&rel).unwrap_or_default();
     Some(
@@ -246,11 +473,37 @@ pub fn files_under(dir: &Path) -> Option<Vec<String>> {
     )
 }
 
+/// A zstd frame's bytes, `len` of them.
+fn unzstd(frame: &[u8], len: u64) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(len as usize);
+    ruzstd::decoding::FrameDecoder::new()
+        .decode_all_to_vec(frame, &mut bytes)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    if bytes.len() as u64 != len {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a packed file's length differs",
+        ));
+    }
+    Ok(bytes)
+}
+
 /// At most the first `max` bytes of `path`, from where [`read`] takes them:
 /// a header, without reading the whole file.
 pub fn read_head(path: &Path, max: u64) -> io::Result<Vec<u8>> {
+    if let Some(found) = lookup(path) {
+        if found.overlay.is_none() && found.files.holds_file(&found.rel) {
+            return found
+                .files
+                .read_head(&found.rel, max)
+                .unwrap_or_else(|| Err(io::ErrorKind::NotFound.into()));
+        }
+        let mut bytes = crate::resource_fs::read(path)?;
+        bytes.truncate(max.min(bytes.len() as u64) as usize);
+        return Ok(bytes);
+    }
     match find(path) {
-        Some((files, rel)) if holds_file(&rel) => files
+        Some((files, rel)) if files.holds_file(&rel) => files
             .read_head(&rel, max)
             .unwrap_or_else(|| Err(io::ErrorKind::NotFound.into())),
         _ => {
@@ -338,6 +591,125 @@ pub fn write_with_readers(root: &Path, readers: usize) -> io::Result<()> {
         let _ = fs::remove_file(&tmp);
     }
     result
+}
+
+/// Writes `root`'s whole folder as one packed file at `out` (version 3): every
+/// file [`packs_file`] takes and `keep` keeps, each as `compress` gives it when
+/// that is smaller. For a device that ships the folder read-only (the iOS app):
+/// the folder beside the file then needs only the sounds and
+/// `horizon-resources.json`. Returns the files' names, for the caller to leave
+/// out of that folder.
+pub fn write_packed(
+    root: &Path,
+    out: &Path,
+    keep: &dyn Fn(&str) -> bool,
+    compress: &(dyn Fn(&[u8]) -> io::Result<Vec<u8>> + Sync),
+) -> io::Result<Vec<String>> {
+    let source = fs::read(root.join(SOURCE))?;
+    let mut listed = Vec::new();
+    walk_all(root, "", &mut listed)?;
+    listed.retain(|(name, _, _)| packs_file(name) && keep(name));
+    listed.sort_by(|a, b| a.0.cmp(&b.0));
+    // Each file as stored, compressed on every core.
+    let next = AtomicUsize::new(0);
+    let stored: Vec<io::Result<(Vec<u8>, u64)>> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..std::thread::available_parallelism().map_or(4, |n| n.get()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(file) = listed.get(at) else {
+                            return done;
+                        };
+                        let result = read_listed_file(file).and_then(|bytes| {
+                            let frame = compress(&bytes)?;
+                            let len = bytes.len() as u64;
+                            Ok(if frame.len() < bytes.len() {
+                                (frame, len)
+                            } else {
+                                (bytes, len)
+                            })
+                        });
+                        done.push((at, result));
+                    }
+                })
+            })
+            .collect();
+        let mut stored: Vec<_> = (0..listed.len()).map(|_| Ok((Vec::new(), 0))).collect();
+        for worker in workers {
+            for (at, result) in worker.join().unwrap_or_default() {
+                stored[at] = result;
+            }
+        }
+        stored
+    });
+    let stored = stored.into_iter().collect::<io::Result<Vec<_>>>()?;
+    let pool_len: usize = listed.iter().map(|(n, _, _)| n.len()).sum();
+    let data_start = HEADER as u64
+        + pad(source.len() as u64)
+        + (listed.len() * PACKED_ENTRY) as u64
+        + pad(pool_len as u64);
+    let mut file = BufWriter::new(File::create(out)?);
+    file.write_all(&MAGIC)?;
+    file.write_all(&PACKED_VERSION.to_le_bytes())?;
+    file.write_all(
+        &u32::try_from(listed.len())
+            .map_err(io::Error::other)?
+            .to_le_bytes(),
+    )?;
+    for len in [0, source.len(), pool_len] {
+        file.write_all(&(len as u64).to_le_bytes())?;
+    }
+    write_padded(&mut file, &source)?;
+    let (mut name_at, mut data_at) = (0u32, data_start);
+    for ((name, _, _), (bytes, len)) in listed.iter().zip(&stored) {
+        file.write_all(&name_at.to_le_bytes())?;
+        file.write_all(&(name.len() as u32).to_le_bytes())?;
+        file.write_all(&data_at.to_le_bytes())?;
+        file.write_all(&(bytes.len() as u64).to_le_bytes())?;
+        file.write_all(&len.to_le_bytes())?;
+        name_at += name.len() as u32;
+        data_at += bytes.len() as u64;
+    }
+    write_padded(
+        &mut file,
+        listed
+            .iter()
+            .flat_map(|(n, _, _)| n.bytes())
+            .collect::<Vec<_>>()
+            .as_slice(),
+    )?;
+    for (bytes, _) in &stored {
+        file.write_all(bytes)?;
+    }
+    file.into_inner()
+        .map_err(io::IntoInnerError::into_error)?
+        .sync_all()?;
+    Ok(listed.into_iter().map(|(name, _, _)| name).collect())
+}
+
+/// Every file under `dir` (named `name` from the root, `""` for the root).
+fn walk_all(dir: &Path, name: &str, out: &mut Vec<(String, PathBuf, u64)>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+            return Err(io::Error::other(format!("{} is not UTF-8", path.display())));
+        };
+        let child = if name.is_empty() {
+            file_name
+        } else {
+            format!("{name}/{file_name}")
+        };
+        let meta = fs::metadata(&path)?;
+        if meta.is_dir() {
+            walk_all(&path, &child, out)?;
+        } else {
+            out.push((child, path, meta.len()));
+        }
+    }
+    Ok(())
 }
 
 /// How many files [`write_with_readers`] holds in memory at once.
@@ -666,6 +1038,138 @@ mod tests {
         assert!(find(&root.join("worldgen")).is_none());
         assert!(find(&root.join("worldgen/biomes.json")).is_none());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A packed file is the whole folder: with the folder's other files gone
+    /// (and the folder moved), every file reads, lists and measures from it,
+    /// zstd frames or not; a file it leaves out is missing, and the sounds
+    /// and `horizon-resources.json` stay on the disk.
+    #[test]
+    fn a_packed_file_stands_in_for_the_whole_folder() {
+        let built = root("packed-built");
+        let big = "{\"a\":1}".repeat(500);
+        fs::write(built.join("facts.json"), &big).unwrap();
+        fs::create_dir_all(built.join("assets/minecraft/lang")).unwrap();
+        fs::write(built.join("assets/minecraft/lang/fr_fr.json"), b"{}").unwrap();
+        let bin = built.join(FILE_NAME);
+        let names = write_packed(
+            &built,
+            &bin,
+            &|name| !name.starts_with("assets/minecraft/lang/"),
+            &|bytes| {
+                Ok(ruzstd::encoding::compress_to_vec(
+                    bytes,
+                    ruzstd::encoding::CompressionLevel::Fastest,
+                ))
+            },
+        )
+        .unwrap();
+        assert!(names.contains(&"facts.json".to_owned()));
+        assert!(!names.iter().any(|n| n.ends_with(".ogg") || n == SOURCE));
+        // The app's folder: the file, the sounds and horizon-resources.json, somewhere else.
+        let root = std::env::temp_dir().join(format!("hz-prepared-packed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let sound = "assets/minecraft/sounds/ambient/cave1.ogg";
+        fs::create_dir_all(root.join(sound).parent().unwrap()).unwrap();
+        for name in [FILE_NAME, SOURCE, sound] {
+            fs::copy(built.join(name), root.join(name)).unwrap();
+        }
+        let files = open(&root).unwrap();
+        assert!(files.packed());
+        use crate::resource_fs as rfs;
+        let listed = |dir: &Path| -> Vec<(String, bool)> {
+            rfs::read_dir(dir)
+                .unwrap()
+                .flatten()
+                .map(|e| {
+                    let name = e.file_name().into_string().unwrap();
+                    (name, e.file_type().unwrap().is_dir())
+                })
+                .collect()
+        };
+        assert_eq!(read(&root.join("facts.json")).unwrap(), big.as_bytes());
+        assert_eq!(rfs::read(root.join("facts.json")).unwrap(), big.as_bytes());
+        assert_eq!(
+            read_head(&root.join("facts.json"), 5).unwrap(),
+            &big.as_bytes()[..5]
+        );
+        assert_eq!(
+            rfs::metadata(root.join("facts.json")).unwrap().len(),
+            big.len() as u64
+        );
+        assert_eq!(
+            read(&root.join("worldgen/structure/minecraft/fossil/spine_1.nbt")).unwrap(),
+            b"\x1f\x8b"
+        );
+        assert_eq!(rfs::read(root.join(sound)).unwrap(), b"OggS");
+        let fr = root.join("assets/minecraft/lang/fr_fr.json");
+        assert_eq!(rfs::read(&fr).unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert!(rfs::is_file(root.join("worldgen/biomes.json")));
+        assert!(!rfs::is_file(&fr));
+        assert!(
+            rfs::is_dir(root.join("data/minecraft")) && !rfs::is_dir(root.join("data/nothing"))
+        );
+        assert!(
+            rfs::metadata(root.join("worldgen/structure"))
+                .unwrap()
+                .is_dir()
+        );
+        assert_eq!(
+            listed(&root.join("assets/minecraft")),
+            [("sounds".to_owned(), true), ("textures".to_owned(), true)]
+        );
+        assert_eq!(
+            listed(&root.join("worldgen")),
+            [
+                ("biomes.json".to_owned(), false),
+                ("structure".to_owned(), true)
+            ]
+        );
+        assert_eq!(
+            files_under(&root.join("data/minecraft/recipe")).unwrap(),
+            ["brewing/awkward.json", "stick.json"]
+        );
+
+        // A resource packs' mirror over it: a pack's texture and a hidden file over the folder's.
+        let mirror =
+            std::env::temp_dir().join(format!("hz-prepared-overlay-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&mirror);
+        let texture = "assets/minecraft/textures/block/stone.png";
+        fs::create_dir_all(mirror.join(texture).parent().unwrap()).unwrap();
+        fs::write(mirror.join(texture), b"pack's stone").unwrap();
+        fs::write(
+            mirror.join("assets/minecraft/textures/block/dirt.png"),
+            b"pack's dirt",
+        )
+        .unwrap();
+        write_overlay(&mirror, &root, &["worldgen/biomes.json".to_owned()]).unwrap();
+        assert!(open_overlay(&mirror));
+        assert_eq!(rfs::read(mirror.join(texture)).unwrap(), b"pack's stone");
+        assert_eq!(read(&mirror.join(texture)).unwrap(), b"pack's stone");
+        assert_eq!(
+            rfs::read(mirror.join("facts.json")).unwrap(),
+            big.as_bytes()
+        );
+        assert_eq!(rfs::read(mirror.join(sound)).unwrap(), b"OggS");
+        assert!(!rfs::is_file(mirror.join("worldgen/biomes.json")));
+        assert_eq!(
+            listed(&mirror.join("worldgen")),
+            [("structure".to_owned(), true)]
+        );
+        assert_eq!(
+            listed(&mirror.join("assets/minecraft/textures/block")),
+            [
+                ("dirt.png".to_owned(), false),
+                ("stone.png".to_owned(), false)
+            ]
+        );
+        assert_eq!(
+            files_under(&mirror.join("assets/minecraft/textures")).unwrap(),
+            ["block/dirt.png", "block/stone.png"]
+        );
+        let _ = fs::remove_dir_all(&mirror);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&built);
     }
 
     /// Under a root with a file, a file it holds reads from it and a file it

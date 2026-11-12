@@ -13,7 +13,6 @@ use crate::{
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     path::Path,
     sync::Arc,
 };
@@ -98,7 +97,7 @@ impl BlockBehavior {
         tags: &BTreeMap<String, Vec<String>>,
         fluid_tags: &BTreeMap<String, Vec<String>>,
     ) -> Result<Option<Self>, GeneratorError> {
-        if !dir.join("block-properties.nbt").exists() {
+        if !horizon_core::resource_fs::exists(dir.join("block-properties.nbt")) {
             return Ok(None);
         }
         let read = |name: &str| -> Result<BlockTableFile<'static>, GeneratorError> {
@@ -106,7 +105,9 @@ impl BlockBehavior {
                 .map_err(|e| resource(format!("{name}: {e}")))
         };
         let json = |name: &str| -> Result<Value, GeneratorError> {
-            Ok(serde_json::from_str(&fs::read_to_string(dir.join(name))?)?)
+            Ok(serde_json::from_str(
+                &horizon_core::resource_fs::read_to_string(dir.join(name))?,
+            )?)
         };
         // The support table reads on its own thread while the collision and
         // property tables (which need the collisions) read on this one.

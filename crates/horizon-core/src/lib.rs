@@ -17,6 +17,7 @@ pub mod paletted;
 pub mod position;
 pub mod prepared_files;
 pub mod random;
+pub mod resource_fs;
 pub mod storage;
 pub mod text;
 pub mod ticks;

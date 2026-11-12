@@ -1483,7 +1483,7 @@ impl BlockEntityRenderer {
         defaults: Option<&horizon_world::item_defaults::Defaults>,
     ) -> Result<Self> {
         let owned_models = if models.is_none() {
-            Some(serde_json::from_slice(&std::fs::read(
+            Some(serde_json::from_slice(&horizon_core::resource_fs::read(
                 root.join("entity-models.json"),
             )?)?)
         } else {
@@ -1515,7 +1515,7 @@ impl BlockEntityRenderer {
             };
             let name = pattern.strip_prefix("minecraft:").unwrap_or(pattern);
             let file = root.join(format!("data/minecraft/decorated_pot_pattern/{name}.json"));
-            let Ok(def) = std::fs::read(file) else {
+            let Ok(def) = horizon_core::resource_fs::read(file) else {
                 continue;
             };
             let def: Value = serde_json::from_slice(&def)?;
@@ -3672,8 +3672,9 @@ mod tests {
             "ender_chest",
             "copper_chest",
         ];
-        let mut facts: std::collections::BTreeMap<String, Value> =
-            serde_json::from_slice(&std::fs::read(root.join("model-states.json"))?)?;
+        let mut facts: std::collections::BTreeMap<String, Value> = serde_json::from_slice(
+            &horizon_core::resource_fs::read(root.join("model-states.json"))?,
+        )?;
         let states = names.map(|name| {
             let name = format!("minecraft:{name}");
             let mut first = facts[&name]["states"][0].clone();
@@ -3715,7 +3716,9 @@ mod tests {
             };
             assert_eq!(models[0].1.particle, Some(sprites.layers[particle]));
         }
-        let all: Value = serde_json::from_slice(&std::fs::read(root.join("entity-models.json"))?)?;
+        let all: Value = serde_json::from_slice(&horizon_core::resource_fs::read(
+            root.join("entity-models.json"),
+        )?)?;
         let renderer = BlockEntityRenderer::new(
             MODELS
                 .iter()

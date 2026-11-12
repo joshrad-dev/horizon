@@ -17,6 +17,12 @@ horizon-threads = { path = "../horizon-threads" }
 horizon-mods = { path = "../horizon-mods", default-features = false, features = ["index"] }
 horizon-client-input = { path = "../horizon-client-input" }
 winit = "0.30.13"
+# The packed resources (prepared_files.rs) and the languages fetched when picked (languages.rs).
+horizon-core = { path = "../horizon-core" }
+log = "0.4"
+serde_json = "1"
+sha1 = "0.10"
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # UIKit's reserved regions (iPhone Duo's fold) and the device idiom, by message: the versions

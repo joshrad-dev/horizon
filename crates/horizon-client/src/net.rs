@@ -1259,7 +1259,7 @@ fn fill_known_entries(r: &mut cfg::RegistryData, resources: &Path) {
             .join(ns)
             .join(&dir)
             .join(format!("{path}.json"));
-        let json = std::fs::read(&file)
+        let json = horizon_core::resource_fs::read(&file)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
         if let Some(json) = json {

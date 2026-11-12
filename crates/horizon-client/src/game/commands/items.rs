@@ -2495,8 +2495,10 @@ mod builtin_component_delivery_tests {
         host.hub.guests.push(guest);
         let clock = game.world.game_time;
         let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
-        let registries: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(root.join("registries.json")).unwrap()).unwrap();
+        let registries: serde_json::Value = serde_json::from_slice(
+            &horizon_core::resource_fs::read(root.join("registries.json")).unwrap(),
+        )
+        .unwrap();
         let id = |registry: &str, name: &str| {
             registries[registry]["entries"][name]["protocol_id"]
                 .as_i64()

@@ -25,7 +25,6 @@ use horizon_world::block_state_properties::BlockProperties;
 use horizon_world::registry::{BlockRegistry, BlockStateId};
 use std::{
     collections::HashMap,
-    fs,
     num::NonZeroU16,
     path::{Path, PathBuf},
 };
@@ -171,7 +170,7 @@ fn turned(face: Face, [x, y, _]: [u8; 3]) -> Face {
 /// The connecting textures under `root`, by sprite name.
 fn connecting_textures(root: &Path) -> HashMap<String, Meta> {
     let mut out = HashMap::new();
-    let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
         return out;
     };
     for ns in namespaces.flatten() {
@@ -220,12 +219,16 @@ fn mcmeta_files(textures: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut dirs = vec![textures.to_owned()];
     while let Some(dir) = dirs.pop() {
-        for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
+        for entry in horizon_core::resource_fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
             let path = entry.path();
             let dir = match entry.file_type() {
-                Ok(t) if t.is_symlink() => path.is_dir(),
+                Ok(t) if t.is_symlink() => horizon_core::resource_fs::is_dir(&path),
                 Ok(t) => t.is_dir(),
-                Err(_) => path.is_dir(),
+                Err(_) => horizon_core::resource_fs::is_dir(&path),
             };
             if dir {
                 dirs.push(path);
@@ -615,30 +618,30 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("horizon-fusion-models-{}", std::process::id()));
         let models = root.join("assets/demo/models/block");
-        fs::create_dir_all(&models).unwrap();
+        std::fs::create_dir_all(&models).unwrap();
         // A pane arm over a template whose `particle` names the pane sheet but draws no face
         // with it (as Fusion Connected Glass's posts do): only the faces count.
-        fs::write(
+        std::fs::write(
             models.join("template.json"),
             r##"{"textures": {"particle": "#pane"}, "elements": [{"from": [7, 0, 0], "to": [9, 16, 7],
                 "faces": {"up": {"texture": "#edge"}, "west": {"texture": "#pane"}}}]}"##,
         )
         .unwrap();
-        fs::write(
+        std::fs::write(
             models.join("arm.json"),
             r#"{"loader": "fusion:model", "type": "fusion:connecting", "parent": "demo:block/template",
                 "connections": {"edge": {"type": "true"}},
                 "textures": {"pane": "demo:block/glass", "edge": {"sprite": "demo:block/edge"}}}"#,
         )
         .unwrap();
-        fs::write(
+        std::fs::write(
             models.join("plain.json"),
             r#"{"parent": "demo:block/template", "textures": {"pane": "demo:block/glass"}}"#,
         )
         .unwrap();
         let arm = connecting_model(&root, "demo:block/arm");
         let plain = connecting_model(&root, "demo:block/plain");
-        fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
         // `edge` has the model's predicate; `pane` none, so the texture's own.
         assert_eq!(
             arm,
@@ -659,9 +662,9 @@ mod tests {
     fn faces_of_one_sprite_join_by_their_own_keys() {
         let root = std::env::temp_dir().join(format!("horizon-fusion-keys-{}", std::process::id()));
         let models = root.join("assets/demo/models/block");
-        fs::create_dir_all(&models).unwrap();
+        std::fs::create_dir_all(&models).unwrap();
         // The wiki's example: four keys on one texture, two of them joining by `blue`.
-        fs::write(
+        std::fs::write(
             models.join("tiles.json"),
             r##"{"loader": "fusion:model", "type": "connecting",
                 "textures": {"ice": "block/oak_tiles", "dirt": "block/oak_tiles", "stone": "block/oak_tiles"},
@@ -673,7 +676,7 @@ mod tests {
         )
         .unwrap();
         let faces = connecting_model(&root, "demo:block/tiles");
-        fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
         let joins = |side| faces.iter().find(|f| f.1 == side).and_then(|f| f.2.clone());
         assert!(matches!(joins(Face::Up), Some(Connection::Neighbour(_))));
         assert_eq!(joins(Face::North), Some(Connection::SameBlock));

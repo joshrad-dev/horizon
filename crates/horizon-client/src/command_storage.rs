@@ -25,7 +25,7 @@ impl CommandStorage {
     /// Read every `data/<namespace>/command_storage.dat` under a world.
     pub fn load(root: &Path) -> Self {
         let mut s = Self::default();
-        let Ok(dirs) = std::fs::read_dir(root.join("data")) else {
+        let Ok(dirs) = horizon_core::resource_fs::read_dir(root.join("data")) else {
             return s;
         };
         for dir in dirs.flatten() {

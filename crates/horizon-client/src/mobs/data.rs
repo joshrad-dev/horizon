@@ -7,7 +7,7 @@ use super::keyframes::Animation;
 use super::path::PathType;
 use crate::blocks::{BlockFacts, Fluid};
 use serde_json::Value;
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, path::Path};
 
 pub const LAND: u16 = 1;
 pub const WATER: u16 = 2;
@@ -69,7 +69,7 @@ pub struct MobData {
 }
 impl MobData {
     pub fn load(root: &Path, facts: &BlockFacts) -> Self {
-        let parsed: Option<Value> = fs::read(root.join("mob-data.json"))
+        let parsed: Option<Value> = horizon_core::resource_fs::read(root.join("mob-data.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok());
         let mut data = match parsed {
@@ -103,7 +103,7 @@ impl MobData {
     }
     /// Only the keyframe animation definitions of `mob-data.json`.
     pub fn load_animations(root: &Path) -> HashMap<String, Animation> {
-        fs::read(root.join("mob-data.json"))
+        horizon_core::resource_fs::read(root.join("mob-data.json"))
             .ok()
             .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
             .map(|v| Self::from_json(&v).animations)

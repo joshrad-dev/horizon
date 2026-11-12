@@ -72,16 +72,20 @@ impl FluidFogs {
     /// colormap id or an expression isn't read (a warning names it).
     pub fn read(root: &Path) -> Self {
         let mut fogs = Self::default();
-        for namespace in std::fs::read_dir(root.join("assets"))
+        for namespace in horizon_core::resource_fs::read_dir(root.join("assets"))
             .into_iter()
             .flatten()
             .flatten()
         {
             let mut stack = vec![namespace.path().join("polytone/fluid_modifiers")];
             while let Some(dir) = stack.pop() {
-                for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                for entry in horizon_core::resource_fs::read_dir(&dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
                     let path = entry.path();
-                    if path.is_dir() {
+                    if horizon_core::resource_fs::is_dir(&path) {
                         stack.push(path);
                     } else if path.extension().is_some_and(|e| e == "json") {
                         fogs.add(root, &path);
@@ -93,7 +97,7 @@ impl FluidFogs {
     }
 
     fn add(&mut self, root: &Path, path: &Path) {
-        let Ok(text) = std::fs::read_to_string(path) else {
+        let Ok(text) = horizon_core::resource_fs::read_to_string(path) else {
             return;
         };
         let Ok(json) = serde_json::from_str::<Json>(&text) else {
@@ -162,7 +166,7 @@ impl PackColors {
     /// `color.properties` in the same namespace).
     pub fn read(root: &Path) -> Self {
         let mut colors = Self::default();
-        let mut namespaces: Vec<_> = std::fs::read_dir(root.join("assets"))
+        let mut namespaces: Vec<_> = horizon_core::resource_fs::read_dir(root.join("assets"))
             .into_iter()
             .flatten()
             .flatten()
@@ -171,10 +175,14 @@ impl PackColors {
         namespaces.sort();
         for namespace in namespaces {
             let polytone = namespace.join("polytone");
-            if let Ok(text) = std::fs::read_to_string(polytone.join("color.properties")) {
+            if let Ok(text) =
+                horizon_core::resource_fs::read_to_string(polytone.join("color.properties"))
+            {
                 colors.add_properties(&text);
             }
-            if let Ok(text) = std::fs::read_to_string(polytone.join("colors.json")) {
+            if let Ok(text) =
+                horizon_core::resource_fs::read_to_string(polytone.join("colors.json"))
+            {
                 match serde_json::from_str::<Json>(&text) {
                     Ok(json) => colors.add_json("", &json),
                     Err(e) => log::warn!("{}: {e}", polytone.join("colors.json").display()),

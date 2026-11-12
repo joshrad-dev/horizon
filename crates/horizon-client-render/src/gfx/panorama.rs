@@ -151,7 +151,7 @@ fn load_face(
         if tried.first().is_some_and(|(seen, _)| *seen == path) {
             continue;
         }
-        let read = std::fs::read(&path)
+        let read = horizon_core::resource_fs::read(&path)
             .map_err(|e| e.to_string())
             .and_then(|file| {
                 let image = decode_bytes(&file).map_err(|e| e.to_string())?;

@@ -22,7 +22,6 @@ use horizon_world::{
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     path::Path,
     sync::OnceLock,
 };
@@ -236,8 +235,9 @@ impl StateModels {
         blocks: &[&str],
         sprites: &mut Sprites,
     ) -> Result<Self> {
-        let facts: BTreeMap<String, Value> =
-            serde_json::from_slice(&fs::read(root.join("model-states.json"))?)?;
+        let facts: BTreeMap<String, Value> = serde_json::from_slice(
+            &horizon_core::resource_fs::read(root.join("model-states.json"))?,
+        )?;
         Self::from_facts(root, registry, blocks, sprites, &facts)
     }
     /// Bind and bake models using an already parsed model-state document.
@@ -662,13 +662,13 @@ mod tests {
             let path = self
                 .0
                 .join(format!("assets/{namespace}/models/{path}.json"));
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, json).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, json).unwrap();
         }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 

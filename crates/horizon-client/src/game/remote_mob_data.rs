@@ -772,8 +772,10 @@ mod tests {
     #[ignore = "run by tools/test_mob_air_parity.py"]
     fn mob_air_parity_fixture() {
         use std::io::Write;
-        let input =
-            std::fs::read_to_string(std::env::var("HORIZON_MOB_AIR_INPUT").unwrap()).unwrap();
+        let input = horizon_core::resource_fs::read_to_string(
+            std::env::var("HORIZON_MOB_AIR_INPUT").unwrap(),
+        )
+        .unwrap();
         let mut output =
             std::fs::File::create(std::env::var("HORIZON_MOB_AIR_OUTPUT").unwrap()).unwrap();
         for line in input.lines() {
@@ -929,8 +931,10 @@ mod tests {
     #[ignore = "run by tools/test_raider_celebration_parity.py"]
     fn raider_celebration_parity_fixture() {
         use std::io::Write;
-        let input =
-            std::fs::read_to_string(std::env::var("HORIZON_RAIDER_SYNC_INPUT").unwrap()).unwrap();
+        let input = horizon_core::resource_fs::read_to_string(
+            std::env::var("HORIZON_RAIDER_SYNC_INPUT").unwrap(),
+        )
+        .unwrap();
         let mut output =
             std::fs::File::create(std::env::var("HORIZON_RAIDER_SYNC_OUTPUT").unwrap()).unwrap();
         for line in input.lines() {

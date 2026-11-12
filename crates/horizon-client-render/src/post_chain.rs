@@ -826,7 +826,7 @@ impl PostEffects {
         id: &str,
         extras: &Extras,
     ) -> Result<Option<Chain>, String> {
-        let Ok(text) = std::fs::read_to_string(resource_path(root, id)) else {
+        let Ok(text) = horizon_core::resource_fs::read_to_string(resource_path(root, id)) else {
             return Ok(None);
         };
         let mut config = Config::parse(&text)?;
@@ -1088,8 +1088,9 @@ impl PostEffects {
             .join(ns)
             .join("textures/effect")
             .join(format!("{path}.png"));
-        let mut decoder = png::Decoder::new(std::io::BufReader::new(
-            std::fs::File::open(&file).map_err(|e| format!("{}: {e}", file.display()))?,
+        let mut decoder = png::Decoder::new(std::io::Cursor::new(
+            horizon_core::resource_fs::read(&file)
+                .map_err(|e| format!("{}: {e}", file.display()))?,
         ));
         // As the other resource-pack images: stb_image never checks chunk CRCs.
         decoder.ignore_checksums(true);

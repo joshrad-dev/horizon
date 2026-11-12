@@ -88,6 +88,23 @@ fn bundled_code(code: &str) -> (&str, bool) {
     }
 }
 
+/// Vanilla's lang files a device fetches when a player picks them instead of shipping them all
+/// (the iOS app: `horizon-ios/src/languages.rs`). It stands where the prepared root does, below
+/// the resource packs; `exists` must not reach the network.
+static REMOTE: std::sync::OnceLock<&'static (dyn ResourceSource + Sync)> =
+    std::sync::OnceLock::new();
+
+/// Installs the source of vanilla's lang files the prepared root left out. Only the first call
+/// counts.
+pub fn install_remote(source: &'static (dyn ResourceSource + Sync)) {
+    let _ = REMOTE.set(source);
+}
+
+/// The installed remote source, as a resource source.
+fn remote() -> Option<&'static dyn ResourceSource> {
+    REMOTE.get().map(|s| *s as &dyn ResourceSource)
+}
+
 /// Lang files crates above the engine ship (`horizon_hooks::lang`), each a list of
 /// (code, JSON) pairs. The game's entry installs them once, before any language loads.
 static CRATE_FILES: std::sync::OnceLock<&'static [&'static [(&'static str, &'static str)]]> =
@@ -412,17 +429,17 @@ impl ResourceSource for Bundled {
 }
 impl ResourceSource for std::path::PathBuf {
     fn read(&self, path: &str) -> Option<Vec<u8>> {
-        std::fs::read(self.join(path)).ok()
+        horizon_core::resource_fs::read(self.join(path)).ok()
     }
     fn exists(&self, path: &str) -> bool {
-        self.join(path).is_file()
+        horizon_core::resource_fs::is_file(self.join(path))
     }
     fn namespaces(&self) -> Vec<String> {
-        std::fs::read_dir(self.join("assets"))
+        horizon_core::resource_fs::read_dir(self.join("assets"))
             .into_iter()
             .flatten()
             .flatten()
-            .filter(|e| e.path().is_dir())
+            .filter(|e| horizon_core::resource_fs::is_dir(e.path()))
             .filter_map(|e| e.file_name().to_str().map(str::to_owned))
             .collect()
     }
@@ -506,6 +523,8 @@ impl Language {
         // override them. Vanilla has no key for "Controller vibration".
         let bundled = Bundled;
         let mut all: Vec<&dyn ResourceSource> = vec![&bundled];
+        // Vanilla's files a device fetches, where the prepared root would have them.
+        all.extend(remote());
         all.extend_from_slice(sources);
         let sources = all.as_slice();
         let namespaces: std::collections::BTreeSet<String> =
@@ -579,7 +598,12 @@ pub fn available(sources: &[&dyn ResourceSource]) -> Vec<LanguageInfo> {
             for (code, info) in value["language"].as_object().into_iter().flatten() {
                 // Only languages whose file exists somewhere are selectable.
                 let file = format!("assets/minecraft/lang/{code}.json");
-                if code != DEFAULT && !sources.iter().any(|s| s.exists(&file)) {
+                if code != DEFAULT
+                    && !sources
+                        .iter()
+                        .chain(remote().as_ref())
+                        .any(|s| s.exists(&file))
+                {
                     continue;
                 }
                 found.insert(
@@ -841,7 +865,7 @@ mod tests {
     /// registered through `horizon_hooks::lang`), with that folder.
     fn crate_lang_dirs() -> Vec<(String, std::path::PathBuf)> {
         let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut dirs: Vec<_> = std::fs::read_dir(&crates)
+        let mut dirs: Vec<_> = horizon_core::resource_fs::read_dir(&crates)
             .unwrap()
             .flatten()
             .map(|e| (e.file_name().into_string().unwrap(), e.path()))
@@ -911,10 +935,10 @@ mod tests {
     /// The checks every lang folder passes: flat maps, no repeated key, no key en_us lacks, the
     /// same placeholders as English, no empty text. Its en_us and how many files it has.
     fn check_lang_dir(dir: &std::path::Path, bundled: bool) -> (HashMap<String, String>, usize) {
-        let en_body = std::fs::read_to_string(dir.join("en_us.json")).unwrap();
+        let en_body = horizon_core::resource_fs::read_to_string(dir.join("en_us.json")).unwrap();
         let en: HashMap<String, String> = serde_json::from_str(&en_body).unwrap();
         let mut seen = 0;
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        for entry in horizon_core::resource_fs::read_dir(dir).unwrap().flatten() {
             let name = entry.file_name().into_string().unwrap();
             let Some(code) = name.strip_suffix(".json") else {
                 continue;
@@ -926,7 +950,7 @@ mod tests {
                 !bundled || Bundled.read(&path).is_some(),
                 "{name} is not served by Bundled"
             );
-            let body = std::fs::read_to_string(entry.path()).unwrap();
+            let body = horizon_core::resource_fs::read_to_string(entry.path()).unwrap();
             let map: HashMap<String, String> = serde_json::from_str(&body)
                 .unwrap_or_else(|e| panic!("{name} is not a flat string map: {e}"));
             let keys = file_keys(&body);
@@ -955,7 +979,11 @@ mod tests {
     #[test]
     fn every_horizon_key_the_code_names_is_in_en_us() {
         fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            for entry in horizon_core::resource_fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
                 let path = entry.path();
                 if path.is_dir() {
                     rust_files(&path, out);
@@ -965,7 +993,10 @@ mod tests {
             }
         }
         let english = |dir: &std::path::Path| -> HashMap<String, String> {
-            serde_json::from_str(&std::fs::read_to_string(dir.join("en_us.json")).unwrap()).unwrap()
+            serde_json::from_str(
+                &horizon_core::resource_fs::read_to_string(dir.join("en_us.json")).unwrap(),
+            )
+            .unwrap()
         };
         let mut en = english(&bundled_dir());
         let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -985,7 +1016,7 @@ mod tests {
         assert!(files.len() > 100, "found only {} sources", files.len());
         let mut found = 0;
         for file in files {
-            let text = std::fs::read_to_string(&file).unwrap();
+            let text = horizon_core::resource_fs::read_to_string(&file).unwrap();
             for (at, _) in text.match_indices("\"horizon.") {
                 let rest = &text[at + 1..];
                 let Some(end) = rest.find('"') else { continue };
@@ -1177,13 +1208,13 @@ mod tests {
             return;
         };
         let mut failed = Vec::new();
-        let mut paths: Vec<_> = std::fs::read_dir(dir)
+        let mut paths: Vec<_> = horizon_core::resource_fs::read_dir(dir)
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
         paths.sort();
         for path in paths {
-            let bytes = std::fs::read(&path).unwrap();
+            let bytes = horizon_core::resource_fs::read(&path).unwrap();
             let strict = serde_json::from_slice::<HashMap<String, String>>(&bytes).is_ok();
             let mut map = HashMap::new();
             read_lang_file(&bytes, &mut map);

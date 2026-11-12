@@ -129,7 +129,7 @@ use horizon_core::{
 };
 use horizon_world::block_collision::BlockCollisionRegistry;
 use serde_json::Value;
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 mod model;
 use model::ModelNormals;
@@ -333,7 +333,7 @@ impl MobTypes {
         document: Option<&EntityModelDocument>,
         item_defaults: Option<&horizon_world::item_defaults::Defaults>,
     ) -> crate::Result<Self> {
-        let bytes = fs::read(root.join("entity-types.json"))?;
+        let bytes = horizon_core::resource_fs::read(root.join("entity-types.json"))?;
         let types: Value = serde_json::from_slice(&bytes)?;
         let exact = exact_attributes(&bytes);
         let models = models_needed
@@ -378,8 +378,9 @@ impl MobTypes {
                         .collect(),
                 ),
                 None => {
-                    let items: HashMap<String, Value> =
-                        serde_json::from_slice(&fs::read(root.join("items.json"))?)?;
+                    let items: HashMap<String, Value> = serde_json::from_slice(
+                        &horizon_core::resource_fs::read(root.join("items.json"))?,
+                    )?;
                     Arc::new(
                         items
                             .into_iter()
@@ -4376,9 +4377,9 @@ pub struct EntityModelDocument(Arc<Value>);
 
 impl EntityModelDocument {
     pub fn load(root: &Path) -> crate::Result<Self> {
-        Ok(Self(Arc::new(serde_json::from_slice(&fs::read(
-            root.join("entity-models.json"),
-        )?)?)))
+        Ok(Self(Arc::new(serde_json::from_slice(
+            &horizon_core::resource_fs::read(root.join("entity-models.json"))?,
+        )?)))
     }
 
     pub fn model(&self, key: &str) -> Option<Part> {

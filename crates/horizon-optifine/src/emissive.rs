@@ -17,7 +17,6 @@
 //! `emissive.properties`; no mod's source was read.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use crate::paths::files_under;
@@ -47,7 +46,7 @@ impl Emissive {
             suffix,
             ..Self::default()
         };
-        let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+        let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
             return out;
         };
         let png = format!("{}.png", out.suffix);
@@ -57,7 +56,7 @@ impl Emissive {
             for file in files_under(root, &format!("{prefix}textures/entity"), &[png.as_str()]) {
                 let overlay = &file[prefix.len()..file.len() - ".png".len()];
                 let base = &overlay[..overlay.len() - out.suffix.len()];
-                if root.join(format!("{prefix}{base}.png")).is_file() {
+                if horizon_core::resource_fs::is_file(root.join(format!("{prefix}{base}.png"))) {
                     out.overlays
                         .insert(atlas_name(&ns, base), atlas_name(&ns, overlay));
                 }
@@ -80,7 +79,7 @@ impl Emissive {
                 continue;
             };
             let overlay = format!("{stem}{png}");
-            if root.join(&overlay).is_file() {
+            if horizon_core::resource_fs::is_file(root.join(&overlay)) {
                 let overlay_name = format!("{name}{}", self.suffix);
                 self.overlays.insert(name.to_owned(), overlay_name.clone());
                 // Those under `textures/` are the atlas's already.
@@ -116,10 +115,10 @@ pub fn suffix(root: &Path) -> String {
         .iter()
         .find_map(|p| {
             let path = root.join(p);
-            if fs::metadata(&path).ok()?.len() > MAX_PROPERTIES {
+            if horizon_core::resource_fs::metadata(&path).ok()?.len() > MAX_PROPERTIES {
                 return None;
             }
-            let text = decode(fs::read(path).ok()?);
+            let text = decode(horizon_core::resource_fs::read(path).ok()?);
             Properties::parse(&text)
                 .get("suffix.emissive")
                 .map(str::to_owned)
@@ -135,16 +134,16 @@ mod tests {
     fn pack(name: &str, files: &[&str], suffix: Option<&str>) -> (std::path::PathBuf, Emissive) {
         let root =
             std::env::temp_dir().join(format!("horizon-emissive-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         for path in files {
             let path = root.join(path);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, "").unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "").unwrap();
         }
         if let Some(suffix) = suffix {
             let path = root.join(PROPERTIES[0]);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, format!("suffix.emissive={suffix}\n")).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, format!("suffix.emissive={suffix}\n")).unwrap();
         }
         let e = Emissive::scan(&root, &RandomTextures::scan(&root));
         (root, e)
@@ -200,7 +199,7 @@ mod tests {
                 "minecraft:optifine/random/entity/zombie/zombie3_e"
             )]
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -218,7 +217,7 @@ mod tests {
             e.overlay("entity/zombie/zombie"),
             Some("entity/zombie/zombie_glow")
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -229,14 +228,14 @@ mod tests {
                 std::process::id(),
                 files.len()
             ));
-            let _ = fs::remove_dir_all(&root);
+            let _ = std::fs::remove_dir_all(&root);
             for (path, bytes) in files {
                 let path = root.join(path);
-                fs::create_dir_all(path.parent().unwrap()).unwrap();
-                fs::write(path, bytes).unwrap();
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, bytes).unwrap();
             }
             let e = Emissive::scan(&root, &RandomTextures::default());
-            let _ = fs::remove_dir_all(root);
+            let _ = std::fs::remove_dir_all(root);
             e.suffix
         };
         // ETF's folder, when OptiFine's file is missing or doesn't set it.
@@ -289,13 +288,13 @@ mod tests {
         assert!(e.files().any(|(_, name)| name == format!("{frame}_e")));
         // No pig_blink_e: the shut eye doesn't take the pig's glow (its open eyes, mostly).
         assert_eq!(e.overlay("entity/pig/pig_blink"), None);
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn no_overlays_no_entries() {
         let (root, e) = pack("none", &[&format!("{ENTITY}/zombie/zombie.png")], None);
         assert!(e.is_empty());
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 }

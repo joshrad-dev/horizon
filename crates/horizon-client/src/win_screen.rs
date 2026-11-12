@@ -75,7 +75,7 @@ impl WinScreen {
         };
         let mut narrated = Vec::new();
         let texts = root.join("assets/minecraft/texts");
-        let read = |name: &str| match std::fs::read_to_string(texts.join(name)) {
+        let read = |name: &str| match horizon_core::resource_fs::read_to_string(texts.join(name)) {
             Ok(s) => Some(s),
             Err(e) => {
                 log::error!("Couldn't load credits from file minecraft:texts/{name}: {e}");

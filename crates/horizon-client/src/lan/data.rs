@@ -794,7 +794,7 @@ impl SyncData {
         keys.sort();
         for key in keys {
             let dir = tag_root.join(key.trim_start_matches("minecraft:"));
-            if !dir.is_dir() {
+            if !horizon_core::resource_fs::is_dir(&dir) {
                 continue;
             }
             let mut files = BTreeMap::new();

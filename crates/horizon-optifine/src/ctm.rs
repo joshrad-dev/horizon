@@ -203,7 +203,7 @@ pub fn load(root: &Path) -> Vec<Rule> {
     let mut rules: Vec<Rule> = crate::properties_files(root, "ctm")
         .into_iter()
         .filter_map(|path| {
-            let bytes = std::fs::read(root.join(&path))
+            let bytes = horizon_core::resource_fs::read(root.join(&path))
                 .map_err(|e| log::warn!("Horizon: connected textures {path}: {e}"))
                 .ok()?;
             // Java's `Properties.load(InputStream)` reads ISO-8859-1; UTF-8 when it is valid.

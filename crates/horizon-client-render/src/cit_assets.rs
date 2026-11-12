@@ -8,7 +8,6 @@
 use horizon_assets::model::{CuboidModel, TextureSlot};
 use horizon_optifine::cit::{Kind, Rule};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::Path;
 
 /// The namespace of CIT files outside `textures/` and `models/`.
@@ -154,7 +153,7 @@ fn load_model(
     if !ours || depth > MAX_PARENTS || !seen.insert(id.clone()) {
         return;
     }
-    let model = fs::read_to_string(root.join(resource))
+    let model = horizon_core::resource_fs::read_to_string(root.join(resource))
         .map_err(|e| e.to_string())
         .and_then(|text| CuboidModel::from_json(&text).map_err(|e| e.to_string()));
     let mut model = match model {
@@ -284,8 +283,8 @@ mod tests {
     fn rule_models_load_with_their_relative_textures_and_parents() {
         let root = std::env::temp_dir().join(format!("horizon-cit-models-{}", std::process::id()));
         let cit = root.join("assets/minecraft/optifine/cit");
-        fs::create_dir_all(cit.join("swords")).unwrap();
-        let write = |rel: &str, text: &str| fs::write(cit.join(rel), text).unwrap();
+        std::fs::create_dir_all(cit.join("swords")).unwrap();
+        let write = |rel: &str, text: &str| std::fs::write(cit.join(rel), text).unwrap();
         write(
             "swords/flame.json",
             r#"{"parent":"./../base","textures":{"layer0":"./flame","layer1":"item/stick"}}"#,
@@ -301,7 +300,7 @@ mod tests {
         })
         .unwrap();
         let models = load_models(&root, &[rule]);
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let cit = |p: &str| format!("horizon_cit:minecraft/optifine/cit/{p}");
         assert_eq!(
             models.keys().cloned().collect::<Vec<_>>(),

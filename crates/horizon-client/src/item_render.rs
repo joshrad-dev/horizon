@@ -34,7 +34,6 @@ use horizon_world::nbt::Tag;
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -683,7 +682,7 @@ pub struct ItemRenderer {
 /// `json_folder`: from the prepared data file when the root has one.
 fn load_definitions(root: &Path) -> BTreeMap<String, ClientItem> {
     let mut out = BTreeMap::new();
-    let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
         return out;
     };
     for ns in namespaces.flatten() {
@@ -791,8 +790,10 @@ impl ItemRenderer {
             (library?, None)
         };
         let permutations = PalettedPermutations::from_atlas(
-            &fs::read_to_string(root.join("assets/minecraft/atlases/items.json"))
-                .unwrap_or_default(),
+            &horizon_core::resource_fs::read_to_string(
+                root.join("assets/minecraft/atlases/items.json"),
+            )
+            .unwrap_or_default(),
         );
         let parts = if drawn {
             entity_models.map_or_else(
@@ -1415,11 +1416,11 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("horizon-item-model-errors-{}", std::process::id()));
         let model = root.join("assets/horizon/models/INVALID.json");
-        fs::create_dir_all(model.parent().unwrap())?;
-        fs::write(model, "{}")?;
+        std::fs::create_dir_all(model.parent().unwrap())?;
+        std::fs::write(model, "{}")?;
         let library = crate::model_library::ParsedModels::load(&root).into_item_library();
         assert!(library.is_err());
-        fs::write(root.join("items.json"), "{")?;
+        std::fs::write(root.join("items.json"), "{")?;
         let load = || {
             ItemRenderer::load_with_library(&root, library.clone())
                 .err()
@@ -1427,9 +1428,9 @@ mod tests {
                 .to_string()
         };
         let broken_items = load();
-        fs::write(root.join("items.json"), "{}")?;
+        std::fs::write(root.join("items.json"), "{}")?;
         let bad_model = load();
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         assert!(!broken_items.starts_with("item models:"));
         assert!(bad_model.starts_with("item models:"));
         Ok(())
@@ -1444,12 +1445,12 @@ mod tests {
             std::process::id()
         ));
         let definitions = root.join("assets/horizon/items");
-        fs::create_dir_all(definitions.join("postman"))?;
+        std::fs::create_dir_all(definitions.join("postman"))?;
         let empty = r#"{"model":{"type":"minecraft:empty"}}"#;
-        fs::write(definitions.join("top.json"), empty)?;
-        fs::write(definitions.join("postman/head.json"), empty)?;
+        std::fs::write(definitions.join("top.json"), empty)?;
+        std::fs::write(definitions.join("postman/head.json"), empty)?;
         let loaded = load_definitions(&root);
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         assert!(loaded.contains_key("horizon:top"));
         assert!(loaded.contains_key("horizon:postman/head"));
         Ok(())
@@ -1461,22 +1462,22 @@ mod tests {
     fn a_server_keeps_prototypes_without_definitions() -> crate::Result<()> {
         let root = std::env::temp_dir().join(format!("horizon-item-server-{}", std::process::id()));
         let definitions = root.join("assets/horizon/items");
-        fs::create_dir_all(&definitions)?;
-        fs::write(
+        std::fs::create_dir_all(&definitions)?;
+        std::fs::write(
             definitions.join("top.json"),
             r#"{"model":{"type":"minecraft:empty"}}"#,
         )?;
-        fs::write(
+        std::fs::write(
             root.join("items.json"),
             r#"{"horizon:top":{"minecraft:max_stack_size":16}}"#,
         )?;
         let cit = root.join("assets/minecraft/optifine");
-        fs::create_dir_all(&cit)?;
-        fs::write(cit.join("cit.properties"), "useGlint=false\n")?;
+        std::fs::create_dir_all(&cit)?;
+        std::fs::write(cit.join("cit.properties"), "useGlint=false\n")?;
         let library = crate::model_library::ParsedModels::load(&root).into_item_library();
         let client = ItemRenderer::load_with_library(&root, library.clone())?;
         let server = ItemRenderer::load_for_server(&root, library)?;
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         assert!(client.models.definitions.contains_key("horizon:top"));
         assert!(server.models.definitions.is_empty());
         assert!(client.cit.is_some());

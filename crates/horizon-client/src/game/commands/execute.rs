@@ -185,7 +185,7 @@ impl Game<'_> {
             std::sync::OnceLock::new();
         EYE_HEIGHTS
             .get_or_init(|| {
-                std::fs::read(self.options.resources.join("entity-types.json"))
+                horizon_core::resource_fs::read(self.options.resources.join("entity-types.json"))
                     .ok()
                     .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
                     .and_then(|v| {

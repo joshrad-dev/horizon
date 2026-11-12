@@ -197,7 +197,7 @@ pub fn set_mod_fluids(fluids: &[ModFluid]) -> io::Result<()> {
 /// Reads `root`'s [`MOD_FLUIDS_FILE`] into the fluid table; a root without
 /// one (no mod declares a fluid) leaves vanilla's alone.
 pub fn load_mod_fluids(root: &Path) -> io::Result<()> {
-    let fluids: Vec<ModFluid> = match std::fs::read(root.join(MOD_FLUIDS_FILE)) {
+    let fluids: Vec<ModFluid> = match horizon_core::resource_fs::read(root.join(MOD_FLUIDS_FILE)) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| invalid(e.to_string()))?,
         Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(e),

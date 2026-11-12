@@ -8,7 +8,6 @@ use horizon_client_core::pattern::Pattern;
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -174,7 +173,7 @@ fn decode_source(s: &Value) -> Option<SpriteSource> {
 /// `assets/<namespace>/textures/<path>.png`.
 pub fn list_textures(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
         return out;
     };
     for ns in namespaces.flatten() {
@@ -192,7 +191,7 @@ pub fn list_textures(root: &Path) -> Vec<String> {
         }
         let mut stack = vec![base.clone()];
         while let Some(dir) = stack.pop() {
-            let Ok(entries) = fs::read_dir(&dir) else {
+            let Ok(entries) = horizon_core::resource_fs::read_dir(&dir) else {
                 continue;
             };
             for e in entries.flatten() {
@@ -200,9 +199,9 @@ pub fn list_textures(root: &Path) -> Vec<String> {
                 // `file_type` comes with the listing; `Path::is_dir` is a stat per
                 // entry, kept for links (which it follows).
                 let dir = match e.file_type() {
-                    Ok(t) if t.is_symlink() => p.is_dir(),
+                    Ok(t) if t.is_symlink() => horizon_core::resource_fs::is_dir(&p),
                     Ok(t) => t.is_dir(),
-                    Err(_) => p.is_dir(),
+                    Err(_) => horizon_core::resource_fs::is_dir(&p),
                 };
                 if dir {
                     stack.push(p);
@@ -399,12 +398,12 @@ pub fn generate(
 /// namespace), by atlas id.
 pub fn atlases(root: &Path) -> BTreeMap<String, Vec<SpriteSource>> {
     let mut out = BTreeMap::new();
-    let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+    let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
         return out;
     };
     for ns in namespaces.flatten() {
         let namespace = ns.file_name().to_string_lossy().into_owned();
-        let Ok(files) = fs::read_dir(ns.path().join("atlases")) else {
+        let Ok(files) = horizon_core::resource_fs::read_dir(ns.path().join("atlases")) else {
             continue;
         };
         for f in files.flatten() {
@@ -413,7 +412,10 @@ pub fn atlases(root: &Path) -> BTreeMap<String, Vec<SpriteSource>> {
                 continue;
             }
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
-            if let Some(sources) = fs::read_to_string(&path).ok().and_then(|t| decode(&t)) {
+            if let Some(sources) = horizon_core::resource_fs::read_to_string(&path)
+                .ok()
+                .and_then(|t| decode(&t))
+            {
                 out.insert(format!("{namespace}:{name}"), sources);
             }
         }

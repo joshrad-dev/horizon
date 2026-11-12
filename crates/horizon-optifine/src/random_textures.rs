@@ -29,7 +29,6 @@
 //! source was read.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::path::Path;
 
 use crate::paths::files_under;
@@ -99,7 +98,7 @@ impl RandomTextures {
 
     fn scan_files(root: &Path) -> Self {
         let mut found: HashMap<String, [Source; FOLDERS.len()]> = HashMap::new();
-        let Ok(namespaces) = fs::read_dir(root.join("assets")) else {
+        let Ok(namespaces) = horizon_core::resource_fs::read_dir(root.join("assets")) else {
             return Self::default();
         };
         let mut namespaces: Vec<String> = namespaces
@@ -149,9 +148,9 @@ impl RandomTextures {
                 // A real rules file is a few KB, and parsing grows with the square of its size:
                 // a bigger or unreadable one holds no rules, so the texture keeps its default.
                 let path = root.join(&file);
-                let text = fs::metadata(&path)
+                let text = horizon_core::resource_fs::metadata(&path)
                     .is_ok_and(|m| m.len() <= MAX_PROPERTIES)
-                    .then(|| fs::read(&path).ok())
+                    .then(|| horizon_core::resource_fs::read(&path).ok())
                     .flatten()
                     .map(decode)
                     .unwrap_or_default();
@@ -290,11 +289,11 @@ mod tests {
             std::process::id(),
             N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         for (path, text) in files {
             let path = root.join(path);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let found = RandomTextures::scan(&root);
         (root, found)
@@ -362,7 +361,7 @@ mod tests {
             file == "assets/minecraft/optifine/random/entity/wolf/wolf_tame2.png"
                 && name == "minecraft:optifine/random/entity/wolf/wolf_tame2"
         }));
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -401,7 +400,7 @@ mod tests {
         let cat = t.get("entity/cat/cat").unwrap();
         assert_eq!(cat.texture(2), Some("entity/cat/cat2"));
         assert!(cat.rules.is_some());
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -418,11 +417,11 @@ mod tests {
             pig.texture(2),
             Some("minecraft:optifine/random/entity/pig/pig2")
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
         let (root, t) = pack(&files[1..]);
         let pig = t.get("entity/pig/pig").unwrap();
         assert_eq!(pig.texture(2), Some("minecraft:optifine/mob/pig/pig2"));
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -470,7 +469,7 @@ mod tests {
             creeper.texture(1),
             Some("minecraft:optifine/random/entity/creeper/creeper1")
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -493,7 +492,7 @@ mod tests {
             tame.rules.is_some(),
             "wolf_tame beside uses wolf.properties"
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
         // The texture's own folder comes after the others.
         let (root, t) = pack(&[
             (&format!("{WOLF}/wolf.properties"), "textures.1=2"),
@@ -506,7 +505,7 @@ mod tests {
             Some("minecraft:optifine/random/entity/wolf/wolf2")
         );
         assert_eq!(wolf.rules, None, "optifine/random's folder holds no rules");
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -523,23 +522,23 @@ mod tests {
             1,
             "not textures.1=2, not even"
         );
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn latin1_rules_are_read() {
         let root =
             std::env::temp_dir().join(format!("horizon-random-latin1-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let dir = root.join(RANDOM).join("creeper");
-        fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
         // `Ébène` in ISO-8859-1: 0xC9 and 0xE8 are no UTF-8.
-        fs::write(
+        std::fs::write(
             dir.join("creeper.properties"),
             b"textures.1=2\nname.1=\xc9b\xe8ne\n",
         )
         .unwrap();
-        fs::write(dir.join("creeper2.png"), b"").unwrap();
+        std::fs::write(dir.join("creeper2.png"), b"").unwrap();
         let t = RandomTextures::scan(&root);
         let id = t.get("entity/creeper/creeper").unwrap().rules.unwrap();
         let named = |name| Facts {
@@ -548,14 +547,14 @@ mod tests {
         };
         assert_eq!(t.rules(id).select(&named("Ébène"), 0), 2);
         assert_eq!(t.rules(id).select(&named("Ebene"), 0), 1);
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn no_files_no_entries() {
         let (root, t) = pack(&[("assets/minecraft/textures/entity/pig/pig.png", "")]);
         assert!(t.is_empty());
-        let _ = fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::{
     cell::RefCell,
     collections::HashMap,
-    fs, io,
+    io,
     path::Path,
     rc::Rc,
     sync::{Arc, Mutex, Weak},
@@ -667,7 +667,7 @@ pub fn shared_tables(root: &Path, overlay: &PackOverlay) -> io::Result<Arc<LootT
         let mut hasher = DefaultHasher::new();
         root.hash(&mut hasher);
         let data = root.join("data");
-        let mut namespaces: Vec<_> = fs::read_dir(&data)
+        let mut namespaces: Vec<_> = horizon_core::resource_fs::read_dir(&data)
             .into_iter()
             .flatten()
             .flatten()
@@ -732,12 +732,12 @@ pub fn native_loot_table_load(id: &str, table: &mut Value) {
 }
 
 fn load_kind(data: &Path, kind: &str, out: &mut HashMap<String, Value>) -> io::Result<()> {
-    let Ok(entries) = fs::read_dir(data) else {
+    let Ok(entries) = horizon_core::resource_fs::read_dir(data) else {
         return Ok(());
     };
     let mut namespaces: Vec<String> = entries
         .flatten()
-        .filter(|e| e.path().is_dir())
+        .filter(|e| horizon_core::resource_fs::is_dir(e.path()))
         .filter_map(|e| e.file_name().to_str().map(str::to_owned))
         .collect();
     namespaces.sort();
@@ -750,7 +750,7 @@ fn load_kind(data: &Path, kind: &str, out: &mut HashMap<String, Value>) -> io::R
 /// Every file's path, size and modification time under `dir`, in name order.
 fn hash_files(dir: &Path, hasher: &mut impl std::hash::Hasher) {
     use std::hash::Hash;
-    let Ok(entries) = fs::read_dir(dir) else {
+    let Ok(entries) = horizon_core::resource_fs::read_dir(dir) else {
         return;
     };
     let mut entries: Vec<_> = entries.flatten().collect();
@@ -2201,9 +2201,9 @@ mod namespace_tests {
     #[test]
     fn loot_tables_are_shared_per_root_and_packs() {
         let root = std::env::temp_dir().join(format!("horizon-loot-share-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("data/minecraft/loot_table/chests")).unwrap();
-        fs::write(
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("data/minecraft/loot_table/chests")).unwrap();
+        std::fs::write(
             root.join("data/minecraft/loot_table/chests/a.json"),
             r#"{"pools": []}"#,
         )
@@ -2221,7 +2221,7 @@ mod namespace_tests {
         assert!(packs.contains_key("minecraft:chests/b"));
         // A table changed at the same path while `first` is still held: the
         // new file is read, not the held map.
-        fs::write(
+        std::fs::write(
             root.join("data/minecraft/loot_table/chests/a.json"),
             r#"{"pools": [], "random_sequence": "minecraft:chests/a"}"#,
         )
@@ -2234,7 +2234,7 @@ mod namespace_tests {
                 .is_some()
         );
         assert!(first["minecraft:chests/a"].get("random_sequence").is_none());
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A table kept as its text reads back as the file's JSON (floats, big
@@ -2243,24 +2243,24 @@ mod namespace_tests {
     #[test]
     fn loot_tables_read_back_as_loaded() {
         let root = std::env::temp_dir().join(format!("horizon-loot-text-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let dir = root.join("data/minecraft/loot_table/blocks");
-        fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
         let table = r#"{"type": "minecraft:block", "pools": [{"rolls": 1.5,
             "bonus_rolls": 0.1, "entries": [{"type": "minecraft:item", "name": "minecraft:stone",
             "weight": 9007199254740993, "functions": [{"function": "minecraft:set_count",
             "count": {"type": "minecraft:uniform", "min": -2.25e-7, "max": 1e300}}]}]}],
             "z": null, "a": [true, false, "\u00e9\n"]}"#;
-        fs::write(dir.join("stone.json"), table).unwrap();
+        std::fs::write(dir.join("stone.json"), table).unwrap();
         let tables = shared_tables(&root, &PackOverlay::NONE).unwrap();
         let expected: Value = serde_json::from_str(table).unwrap();
         assert_eq!(tables.get("minecraft:blocks/stone"), Some(&expected));
         assert_eq!(tables.len(), 1);
         assert!(tables.get("minecraft:blocks/dirt").is_none());
         drop(tables);
-        fs::write(dir.join("dirt.json"), r#"{"pools": [}"#).unwrap();
+        std::fs::write(dir.join("dirt.json"), r#"{"pools": [}"#).unwrap();
         assert!(shared_tables(&root, &PackOverlay::NONE).is_err());
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A content mods' root: the mods' loot tables and tags load beside
@@ -2268,7 +2268,7 @@ mod namespace_tests {
     #[test]
     fn loads_every_namespace() {
         let root = std::env::temp_dir().join(format!("horizon-loot-ns-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let files = [
             ("items.json", r#"{"minecraft:bread": {}}"#),
             (
@@ -2286,8 +2286,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         assert!(data.has_table("minecraft:chests/village"));
@@ -2297,7 +2297,7 @@ mod namespace_tests {
         // Rolls and weights written as floats (Towns and Towers' tables).
         let table = r#"{"pools": [{"rolls": {"type": "minecraft:uniform", "min": 3.0, "max": 3.0},
             "entries": [{"type": "minecraft:item", "name": "minecraft:bread", "weight": 2.0}]}]}"#;
-        fs::write(
+        std::fs::write(
             root.join("data/kaisyn/loot_table/village/forest/house.json"),
             table,
         )
@@ -2306,7 +2306,7 @@ mod namespace_tests {
         let filled = data.fill("kaisyn:village/forest/house", 1, 27, None);
         let count: i32 = filled.iter().flatten().map(|s| s.count).sum();
         assert_eq!(count, 3);
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `SetCustomModelDataFunction`: each of the model data's four lists goes
@@ -2317,7 +2317,7 @@ mod namespace_tests {
     #[test]
     fn set_custom_model_data_applies_each_list_operation() {
         let root = std::env::temp_dir().join(format!("horizon-loot-cmd-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:stick",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:custom_model_data": {"floats": [1.0], "strings": ["old"]}}},
@@ -2333,8 +2333,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/model", 3, 27, None);
@@ -2350,7 +2350,7 @@ mod namespace_tests {
         assert_eq!(component["flags"], serde_json::json!([true]));
         assert_eq!(component["strings"], serde_json::json!(["new"]));
         assert_eq!(component["colors"], serde_json::json!([16711680]));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The edges `ListOperation` names but a table rarely reaches: a section
@@ -2381,7 +2381,7 @@ mod namespace_tests {
     #[test]
     fn set_lore_appends_and_replaces_the_lore_lines() {
         let root = std::env::temp_dir().join(format!("horizon-loot-lore-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:stick",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:lore": [{"text": "old"}]}},
@@ -2393,8 +2393,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/lore", 3, 27, None);
@@ -2410,7 +2410,7 @@ mod namespace_tests {
             serde_json::json!([{"text": "old"}, {"text": "new"}])
         );
         // `replace_all`: the function's lines are the whole list.
-        fs::write(
+        std::fs::write(
             root.join("data/minecraft/loot_table/chests/lore.json"),
             table.replace(r#""mode": "append""#, r#""mode": "replace_all""#),
         )
@@ -2424,7 +2424,7 @@ mod namespace_tests {
             .filter(|(k, _)| k == "minecraft:lore")
             .collect();
         assert_eq!(component[0].1, serde_json::json!([{"text": "new"}]));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `SetBannerPatternFunction`: a banner from a loot table gets the layers
@@ -2433,7 +2433,7 @@ mod namespace_tests {
     #[test]
     fn set_banner_pattern_writes_the_layers() {
         let root = std::env::temp_dir().join(format!("horizon-loot-banner-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:white_banner",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:banner_patterns": [{"pattern": "minecraft:stripe_bottom", "color": "red"}]}},
@@ -2446,8 +2446,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/banner", 5, 27, None);
@@ -2467,7 +2467,7 @@ mod namespace_tests {
         );
         // Without `append` the function's layers are the whole list.
         let table = table.replace(r#""append": true,"#, r#""append": false,"#);
-        fs::write(
+        std::fs::write(
             root.join("data/minecraft/loot_table/chests/banner.json"),
             table,
         )
@@ -2484,7 +2484,7 @@ mod namespace_tests {
             component[0].1,
             serde_json::json!([{"pattern": "minecraft:border", "color": "blue"}])
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `SetBookCoverFunction`: a written book from a loot table carries the
@@ -2493,7 +2493,7 @@ mod namespace_tests {
     #[test]
     fn set_book_cover_titles_the_written_book() {
         let root = std::env::temp_dir().join(format!("horizon-loot-book-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:written_book",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:written_book_content": {"title": {"raw": "Old"}, "author": "Nobody", "pages": [{"raw": "page one"}]}}},
@@ -2505,8 +2505,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/book", 7, 27, None);
@@ -2523,7 +2523,7 @@ mod namespace_tests {
         assert_eq!(content["generation"], 2);
         // The pages an earlier function wrote are still the book's.
         assert_eq!(content["pages"][0]["raw"], "page one");
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `SetWrittenBookPagesFunction`: the function's pages go through its
@@ -2533,7 +2533,7 @@ mod namespace_tests {
     #[test]
     fn set_written_book_pages_applies_the_page_operation() {
         let root = std::env::temp_dir().join(format!("horizon-loot-pages-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:written_book",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:written_book_content": {"title": {"raw": "A Guide"}, "author": "Cartographer", "pages": [{"raw": "page one"}]}}},
@@ -2545,8 +2545,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/pages", 11, 27, None);
@@ -2566,7 +2566,7 @@ mod namespace_tests {
             })
         );
         // `replace_all`: the function's pages are the whole list.
-        fs::write(
+        std::fs::write(
             root.join("data/minecraft/loot_table/chests/pages.json"),
             table.replace(r#""mode": "append""#, r#""mode": "replace_all""#),
         )
@@ -2587,14 +2587,14 @@ mod namespace_tests {
                 "pages": [{"raw": "page two"}],
             })
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `SetInstrumentFunction`: a goat horn from a loot table gets one of the options as its instrument.
     #[test]
     fn set_instrument_picks_one_of_its_options() {
         let root = std::env::temp_dir().join(format!("horizon-loot-horn-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r##"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:goat_horn",
             "modifier": [{"type": "minecraft:set_instrument", "options": ["minecraft:ponder_goat_horn", "minecraft:sing_goat_horn"]}]}]}]}"##;
         let files = [
@@ -2603,8 +2603,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let mut seen = std::collections::BTreeSet::new();
@@ -2623,7 +2623,7 @@ mod namespace_tests {
             seen.into_iter().collect::<Vec<_>>(),
             ["minecraft:ponder_goat_horn", "minecraft:sing_goat_horn"]
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // `content_id`'s tag key shape (`tags/<ns>:<registry>/<path>`) through
@@ -2655,10 +2655,10 @@ mod namespace_tests {
     #[test]
     fn pack_tags_join_and_replace_the_game_own() {
         let root = std::env::temp_dir().join(format!("horizon-loot-tag-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("data/minecraft/tags/item")).unwrap();
-        fs::write(root.join("items.json"), "{}").unwrap();
-        fs::write(
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("data/minecraft/tags/item")).unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
+        std::fs::write(
             root.join("data/minecraft/tags/item/food.json"),
             r#"{"values": ["minecraft:bread", "minecraft:cookie"]}"#,
         )
@@ -2676,7 +2676,7 @@ mod namespace_tests {
         assert!(data.in_tag("item", "minecraft:food", "minecraft:apple"));
         assert!(!data.in_tag("item", "minecraft:food", "minecraft:bread"));
         assert!(!data.in_tag("item", "minecraft:food", "minecraft:kelp"));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
     /// `ToggleTooltips`: a loot table's toggles show the components an earlier
     /// display hid and hide the ones it shows; the item layer reads the
@@ -2685,7 +2685,7 @@ mod namespace_tests {
     fn toggle_tooltips_rewrites_the_hidden_components() {
         let root =
             std::env::temp_dir().join(format!("horizon-loot-tooltip-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:stick",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:tooltip_display": {"hidden_components": ["minecraft:enchantments"]}}},
@@ -2697,8 +2697,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/tooltip", 13, 27, None);
@@ -2713,7 +2713,7 @@ mod namespace_tests {
             display[0].1,
             serde_json::json!({"hidden_components": ["minecraft:lore"]})
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `SetCustomDataFunction`: a loot table's compound merges into the
@@ -2723,7 +2723,7 @@ mod namespace_tests {
     #[test]
     fn set_custom_data_merges_into_the_component() {
         let root = std::env::temp_dir().join(format!("horizon-loot-data-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:stick",
             "modifier": [
                 {"type": "minecraft:set_components", "components": {"minecraft:custom_data": {"a": {"b": 1}, "c": 1}}},
@@ -2736,8 +2736,8 @@ mod namespace_tests {
         ];
         for (name, text) in files {
             let path = root.join(name);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, text).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
         }
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let filled = data.fill("minecraft:chests/data", 17, 27, None);
@@ -2752,7 +2752,7 @@ mod namespace_tests {
             component[0].1,
             serde_json::json!({"a": {"b": 1, "d": 2, "e": 3}, "c": 2, "f": "x"})
         );
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
@@ -2959,24 +2959,24 @@ mod location_check_biome_tests {
     /// jungle biome tag of the game's own and `packs` over it.
     fn table(name: &str, biomes: &str, packs: &[(String, Vec<Vec<u8>>)]) -> LootData {
         let root = std::env::temp_dir().join(format!("loot-biomes-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let dir = root.join("data/minecraft/loot_table");
-        fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
         let json = format!(
             r#"{{"pools":[{{"rolls":1,"entries":[{{"type":"minecraft:item","name":"minecraft:stone",
                 "condition":{{"type":"minecraft:location_check","predicate":{{"biomes":{biomes}}}}}}}]}}]}}"#
         );
-        fs::write(dir.join("test.json"), json).unwrap();
+        std::fs::write(dir.join("test.json"), json).unwrap();
         let tags = root.join("data/minecraft/tags/worldgen/biome");
-        fs::create_dir_all(&tags).unwrap();
-        fs::write(
+        std::fs::create_dir_all(&tags).unwrap();
+        std::fs::write(
             tags.join("is_jungle.json"),
             r#"{"values": ["minecraft:jungle", "minecraft:bamboo_jungle"]}"#,
         )
         .unwrap();
-        fs::write(root.join("items.json"), "{}").unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
         let data = LootData::load(&root, &PackOverlay { files: packs }).unwrap();
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         data
     }
 

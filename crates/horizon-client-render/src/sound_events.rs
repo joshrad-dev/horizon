@@ -8,7 +8,6 @@ use horizon_core::random::RandomSource;
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::Path,
 };
 
@@ -233,7 +232,7 @@ fn sound_files(namespace: &Path) -> HashSet<String> {
     let mut files = HashSet::new();
     let mut stack = vec![namespace.join("sounds")];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
+        let Ok(entries) = horizon_core::resource_fs::read_dir(&dir) else {
             continue;
         };
         for e in entries.flatten() {
@@ -243,7 +242,7 @@ fn sound_files(namespace: &Path) -> HashSet<String> {
                 continue;
             };
             let (dir, file) = if kind.is_symlink() {
-                (path.is_dir(), path.is_file())
+                (horizon_core::resource_fs::is_dir(&path), path.is_file())
             } else {
                 (kind.is_dir(), kind.is_file())
             };
@@ -261,7 +260,7 @@ impl SoundRegistry {
     /// validated against `assets/<namespace>/sounds/`.
     pub fn load(root: &Path) -> Self {
         let assets = root.join("assets");
-        let mut namespaces: Vec<String> = fs::read_dir(&assets)
+        let mut namespaces: Vec<String> = horizon_core::resource_fs::read_dir(&assets)
             .into_iter()
             .flatten()
             .flatten()
@@ -277,7 +276,9 @@ impl SoundRegistry {
         let exists = |ns: &str, path: &str| files.get(ns).is_some_and(|f| f.contains(path));
         let mut registry = Self::default();
         for namespace in &namespaces {
-            let Ok(text) = fs::read(assets.join(namespace).join("sounds.json")) else {
+            let Ok(text) =
+                horizon_core::resource_fs::read(assets.join(namespace).join("sounds.json"))
+            else {
                 continue;
             };
             registry.add_file(namespace, &text, &exists);
@@ -444,15 +445,15 @@ mod tests {
     fn load_keeps_the_sound_files_a_root_holds() {
         let root = std::env::temp_dir().join(format!("horizon-sounds-{}", std::process::id()));
         let ns = root.join("assets/minecraft");
-        fs::create_dir_all(ns.join("sounds/block/note")).unwrap();
-        fs::write(ns.join("sounds/block/note/harp.ogg"), b"").unwrap();
-        fs::write(
+        std::fs::create_dir_all(ns.join("sounds/block/note")).unwrap();
+        std::fs::write(ns.join("sounds/block/note/harp.ogg"), b"").unwrap();
+        std::fs::write(
             ns.join("sounds.json"),
             br#"{"note": {"sounds": ["block/note/harp", "block/note/gone"]}}"#,
         )
         .unwrap();
         let r = SoundRegistry::load(&root);
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         let sounds = &r.get("minecraft:note").unwrap().sounds;
         let kept: Vec<&str> = sounds.iter().map(|s| s.location.as_str()).collect();
         assert_eq!(kept, ["minecraft:block/note/harp"]);

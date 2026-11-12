@@ -8,7 +8,6 @@ use horizon_world::registry::{BlockRegistry, BlockStateId};
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::Path,
     sync::Arc,
 };
@@ -347,7 +346,7 @@ pub struct ItemStack {
 /// `order`'s items in the registry's order (`command-registries.json`'s
 /// `items`, exported from the game); `order` itself when that is missing.
 fn registry_order(root: &Path, order: &[Arc<str>]) -> Vec<Arc<str>> {
-    let listed: Vec<String> = fs::read(root.join("command-registries.json"))
+    let listed: Vec<String> = horizon_core::resource_fs::read(root.join("command-registries.json"))
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
         .and_then(|v| serde_json::from_value(v["items"].clone()).ok())
@@ -492,13 +491,16 @@ fn parse_instrument(v: &Value) -> Instrument {
 }
 fn load_instruments(root: &Path) -> HashMap<String, Instrument> {
     let mut instruments = HashMap::new();
-    let Ok(dir) = fs::read_dir(root.join("data/minecraft/instrument")) else {
+    let Ok(dir) = horizon_core::resource_fs::read_dir(root.join("data/minecraft/instrument"))
+    else {
         return instruments;
     };
     for entry in dir.flatten() {
         let path = entry.path();
-        let (Some(stem), Ok(bytes)) = (path.file_stem().and_then(|s| s.to_str()), fs::read(&path))
-        else {
+        let (Some(stem), Ok(bytes)) = (
+            path.file_stem().and_then(|s| s.to_str()),
+            horizon_core::resource_fs::read(&path),
+        ) else {
             continue;
         };
         let Ok(v) = serde_json::from_slice::<Value>(&bytes) else {
@@ -522,13 +524,17 @@ fn load_songs(root: &Path) -> HashMap<String, Song> {
     songs
 }
 fn read_songs(root: &Path, namespace: &str, songs: &mut HashMap<String, Song>) {
-    let Ok(dir) = fs::read_dir(root.join(format!("data/{namespace}/jukebox_song"))) else {
+    let Ok(dir) =
+        horizon_core::resource_fs::read_dir(root.join(format!("data/{namespace}/jukebox_song")))
+    else {
         return;
     };
     for entry in dir.flatten() {
         let path = entry.path();
-        let (Some(stem), Ok(bytes)) = (path.file_stem().and_then(|s| s.to_str()), fs::read(&path))
-        else {
+        let (Some(stem), Ok(bytes)) = (
+            path.file_stem().and_then(|s| s.to_str()),
+            horizon_core::resource_fs::read(&path),
+        ) else {
             continue;
         };
         let Ok(v) = serde_json::from_slice::<Value>(&bytes) else {
@@ -586,7 +592,7 @@ pub(crate) fn load_tag_lists(
     // Vanilla's tags; with content mods also the convention (`c`) tags and the mods' own.
     for namespace in crate::content_namespaces::tag_namespaces(root) {
         let dir = root.join(format!("data/{namespace}/tags/{kind}"));
-        if dir.exists() {
+        if horizon_core::resource_fs::exists(&dir) {
             walk(&dir, &namespace, &mut raw)?;
         }
     }
@@ -800,7 +806,7 @@ impl Items {
         struct Fields {
             block: Option<String>,
         }
-        let bindings = match fs::read(root.join("block-behaviours.json")) {
+        let bindings = match horizon_core::resource_fs::read(root.join("block-behaviours.json")) {
             Ok(bytes) => serde_json::from_slice::<Bindings>(&bytes)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Bindings::default(),
             Err(error) => return Err(error.into()),
@@ -831,7 +837,7 @@ impl Items {
         let raw = horizon_world::item_defaults::shared(root)?;
         let entity_tags = load_tags(root, "entity_type", overlay)?;
         let path = root.join(MOD_CRAFT_REMAINDERS);
-        let mod_remainders: HashMap<String, String> = match fs::read(&path) {
+        let mod_remainders: HashMap<String, String> = match horizon_core::resource_fs::read(&path) {
             Ok(bytes) => {
                 serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?
             }
@@ -2916,9 +2922,10 @@ pub(crate) fn prepared_items() -> Option<Items> {
     if !root.join("items.json").exists() {
         return None;
     }
-    let (registry, _) =
-        BlockRegistry::from_facts_json_with_flags(fs::File::open(root.join("facts.json")).ok()?)
-            .ok()?;
+    let (registry, _) = BlockRegistry::from_facts_json_with_flags(
+        std::fs::File::open(root.join("facts.json")).ok()?,
+    )
+    .ok()?;
     let facts = BlockFacts::load(&root, &registry).ok()?;
     Items::load(&root, &registry, &facts, &PackOverlay::NONE).ok()
 }
@@ -3005,8 +3012,8 @@ mod tests {
             "horizon-weapon-disable-blocking-{}",
             std::process::id()
         ));
-        fs::create_dir_all(&root).unwrap();
-        fs::write(
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
             root.join("items.json"),
             r#"{"minecraft:stick":{},"minecraft:diamond_axe":{"minecraft:weapon":{"disable_blocking_for_seconds":5.0}}}"#,
         )
@@ -3049,15 +3056,15 @@ mod tests {
         (axe.damage, axe.extra) = crate::item_data::decode_components(Some(&removal));
         let restored = crate::item_nbt::item_from_nbt(&crate::item_nbt::item_to_nbt(&axe)).unwrap();
         assert_eq!(items.weapon_disable_blocking(&restored), 0.0);
-        fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn loot_table_ids_list_the_roots_and_the_packs_tables() {
         let root = std::env::temp_dir().join(format!("horizon-loot-ids-{}", std::process::id()));
-        fs::create_dir_all(root.join("data/mymod/loot_table/rooms")).unwrap();
-        fs::write(root.join("items.json"), "{}").unwrap();
-        fs::write(
+        std::fs::create_dir_all(root.join("data/mymod/loot_table/rooms")).unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
+        std::fs::write(
             root.join("data/mymod/loot_table/rooms/a.json"),
             r#"{"pools":[]}"#,
         )
@@ -3070,7 +3077,7 @@ mod tests {
         let mut ids: Vec<&str> = items.loot_table_ids().collect();
         ids.sort();
         assert_eq!(ids, ["mymod:rooms/a", "mypack:b"]);
-        fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// A content mod's songs load under its own namespace, beside vanilla's;
@@ -3078,18 +3085,18 @@ mod tests {
     #[test]
     fn content_mod_songs_load_under_their_namespace() {
         let root = std::env::temp_dir().join(format!("horizon-songs-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&root);
         for ns in ["minecraft", "mymod"] {
-            fs::create_dir_all(root.join(format!("data/{ns}/jukebox_song"))).unwrap();
+            std::fs::create_dir_all(root.join(format!("data/{ns}/jukebox_song"))).unwrap();
         }
-        fs::write(root.join("items.json"), "{}").unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
         let song = json!({"sound_event": "mymod:music_disc.tune", "length_in_seconds": 5.0, "comparator_output": 3, "description": "tune"});
-        fs::write(
+        std::fs::write(
             root.join("data/mymod/jukebox_song/tune.json"),
             song.to_string(),
         )
         .unwrap();
-        fs::write(
+        std::fs::write(
             root.join("data/minecraft/jukebox_song/cat.json"),
             json!({"sound_event": "minecraft:music_disc.cat", "length_in_seconds": 185.0, "comparator_output": 2, "description": "cat"}).to_string(),
         )
@@ -3099,14 +3106,14 @@ mod tests {
         assert!(items.songs.contains_key("minecraft:cat"));
         assert!(!items.songs.contains_key("mymod:tune"));
 
-        fs::write(root.join(crate::content_namespaces::MARKER), r#"["mymod"]"#).unwrap();
+        std::fs::write(root.join(crate::content_namespaces::MARKER), r#"["mymod"]"#).unwrap();
         let items = Items::catalog(&root, &PackOverlay::NONE).unwrap();
         let tune = &items.songs["mymod:tune"];
         assert_eq!(tune.sound, "mymod:music_disc.tune");
         assert_eq!((tune.length_ticks, tune.comparator), (100, 3));
         assert!(items.songs.contains_key("minecraft:cat"));
         assert!(!items.songs.contains_key("minecraft:tune"));
-        fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -3152,8 +3159,8 @@ mod tests {
     fn admitted_tool_rules_override_defaults_and_removals_survive_saving() {
         let root =
             std::env::temp_dir().join(format!("horizon-tool-components-{}", std::process::id()));
-        fs::create_dir_all(root.join("data/minecraft/loot_table")).unwrap();
-        fs::write(root.join("items.json"), r#"{"minecraft:stick":{},"minecraft:diamond_pickaxe":{"minecraft:max_damage":1561,"minecraft:tool":{"rules":[{"blocks":"minecraft:stone","speed":8.0,"correct_for_drops":true}],"damage_per_block":1}}}"#).unwrap();
+        std::fs::create_dir_all(root.join("data/minecraft/loot_table")).unwrap();
+        std::fs::write(root.join("items.json"), r#"{"minecraft:stick":{},"minecraft:diamond_pickaxe":{"minecraft:max_damage":1561,"minecraft:tool":{"rules":[{"blocks":"minecraft:stone","speed":8.0,"correct_for_drops":true}],"damage_per_block":1}}}"#).unwrap();
         let items = Items::catalog(&root, &PackOverlay::NONE).unwrap();
         let mut pick = ItemStack::new("minecraft:diamond_pickaxe", 1);
         assert_eq!(items.mining_speed(Some(&pick), "minecraft:stone"), 8.0);
@@ -3186,7 +3193,7 @@ mod tests {
         assert_eq!(items.mining_speed(Some(&stick), "minecraft:stone"), 1.0);
         assert!(!items.correct_for_drops(Some(&stick), "minecraft:stone"));
         assert_eq!(items.mining_damage(&stick), None);
-        fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -4025,15 +4032,15 @@ mod tests {
     fn mod_items_take_their_crafting_remainders() {
         let root =
             std::env::temp_dir().join(format!("horizon-craft-remainders-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("data/minecraft/loot_table")).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("data/minecraft/loot_table")).unwrap();
         let items = r#"{"minecraft:bowl": {}, "minecraft:milk_bucket": {}, "ruby:stew": {}}"#;
-        fs::write(root.join("items.json"), items).unwrap();
+        std::fs::write(root.join("items.json"), items).unwrap();
         let catalog = |root: &Path| Items::catalog(root, &PackOverlay::NONE).unwrap();
         let remainder = |items: &Items, id: &str| items.items[id].crafting_remainder.clone();
         let vanilla = catalog(&root);
         assert_eq!(remainder(&vanilla, "ruby:stew"), None);
-        fs::write(
+        std::fs::write(
             root.join(MOD_CRAFT_REMAINDERS),
             r#"{"ruby:stew": "minecraft:bowl"}"#,
         )
@@ -4048,7 +4055,7 @@ mod tests {
             Some("minecraft:bucket")
         );
         assert_eq!(remainder(&modded, "minecraft:bowl"), None);
-        fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
 

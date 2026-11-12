@@ -759,7 +759,11 @@ fn junction(_: &Path, _: &Path) -> io::Result<()> {
 /// Build `out` as `vanilla` with the packs' files layered on top (packs in
 /// load order, last wins). Untouched directories are links into vanilla.
 pub fn build_overlay(vanilla: &Path, packs: &[Pack], out: &Path) -> io::Result<()> {
-    cache::build(vanilla, packs, out)
+    cache::build(vanilla, packs, out)?;
+    // Over a packed vanilla (the iOS app's) the mirror holds only the packs' files: its reads
+    // go through vanilla's file for the rest (horizon_core::resource_fs), built or reused.
+    horizon_core::prepared_files::open_overlay(out);
+    Ok(())
 }
 
 fn build_overlay_uncached(
@@ -772,6 +776,14 @@ fn build_overlay_uncached(
         fs::remove_dir_all(out)?;
     }
     fs::create_dir_all(out)?;
+    // A packed vanilla (the iOS app's) has no files to link: the mirror holds only the
+    // packs', and names what of vanilla's they hide (`write_overlay`).
+    let packed_vanilla = horizon_core::prepared_files::open(vanilla).is_some_and(|f| f.packed());
+    if packed_vanilla {
+        // Its file changes with every install of the app: so does the mirror.
+        dependencies.file(&vanilla.join(horizon_core::prepared_files::FILE_NAME));
+    }
+    let mut whiteouts: Vec<String> = Vec::new();
     // Final owner of every overridden file.
     let mut files: BTreeMap<String, (usize, Provided)> = BTreeMap::new();
     // Every pack's copy of the files vanilla reads as a resource stack.
@@ -850,7 +862,7 @@ fn build_overlay_uncached(
         let mut layers = Vec::new();
         dependencies.file(&vanilla.join(name));
         if !filters.iter().any(|f| f.blocks(name))
-            && let Ok(bytes) = fs::read(vanilla.join(name))
+            && let Ok(bytes) = horizon_core::resource_fs::read(vanilla.join(name))
         {
             layers.push(bytes);
         }
@@ -896,6 +908,8 @@ fn build_overlay_uncached(
         filters: &[&Filter],
         dependencies: &mut cache::Dependencies,
         extract: &mut Vec<Extract<'a>>,
+        // `Some` over a packed vanilla: what of vanilla's the mirror hides, collected.
+        mut whiteouts: Option<&mut Vec<String>>,
     ) -> io::Result<()> {
         let src = if rel.is_empty() {
             vanilla.to_path_buf()
@@ -910,7 +924,7 @@ fn build_overlay_uncached(
         fs::create_dir_all(&dst)?;
         dependencies.directory(&src);
         let mut names: BTreeSet<String> = BTreeSet::new();
-        if let Ok(entries) = fs::read_dir(&src) {
+        if let Ok(entries) = horizon_core::resource_fs::read_dir(&src) {
             names.extend(
                 entries
                     .flatten()
@@ -934,9 +948,16 @@ fn build_overlay_uncached(
         for name in names {
             let child = format!("{prefix}{name}");
             // Vanilla's files in one file: it describes vanilla's root, not this mirror.
-            if hidden.contains(&child) || child == horizon_core::prepared_files::FILE_NAME {
+            if child == horizon_core::prepared_files::FILE_NAME {
                 continue;
             }
+            if hidden.contains(&child) {
+                if let Some(w) = whiteouts.as_deref_mut() {
+                    w.push(child);
+                }
+                continue;
+            }
+            let vanilla_dir = horizon_core::resource_fs::is_dir(vanilla.join(&child));
             if let Some(bytes) = merged.get(&child) {
                 fs::write(out.join(&child), bytes)?;
             } else if let Some((owner, (path, inner))) = files.get(&child) {
@@ -946,9 +967,15 @@ fn build_overlay_uncached(
                     // Inflated and written after the walk, on every thread.
                     None => extract.push((*owner, inner.as_str(), target)),
                 }
+            } else if whiteouts.is_some()
+                && filters.is_empty()
+                && !touched.contains(&child)
+                && vanilla_dir
+            {
+                // Over a packed vanilla, an untouched folder is read from vanilla's file.
             } else if filters.is_empty()
                 && !touched.contains(&child)
-                && vanilla.join(&child).is_dir()
+                && vanilla_dir
                 && junction(&vanilla.join(&child), &out.join(&child)).is_ok()
             {
                 // Linked whole, like the unix symlink: no file in it is visited or copied.
@@ -957,7 +984,7 @@ fn build_overlay_uncached(
                 // above), so an untouched one has to be mirrored: skipping it hid textures/font
                 // and the title panorama from the overlay, and a font json that names those
                 // sheets then failed to load (#1688).
-                || (vanilla.join(&child).is_dir() && (cfg!(not(unix)) || !filters.is_empty()))
+                || (vanilla_dir && (cfg!(not(unix)) || !filters.is_empty()))
             {
                 mirror(
                     &child,
@@ -970,9 +997,15 @@ fn build_overlay_uncached(
                     filters,
                     dependencies,
                     extract,
+                    whiteouts.as_deref_mut(),
                 )?;
             } else if filters.iter().any(|f| f.blocks(&child)) {
                 // Hidden by a pack's filter.
+                if let Some(w) = whiteouts.as_deref_mut() {
+                    w.push(child);
+                }
+            } else if whiteouts.is_some() {
+                // Over a packed vanilla, read from vanilla's file.
             } else {
                 #[cfg(not(unix))]
                 if vanilla.join(&child).is_file() {
@@ -995,7 +1028,11 @@ fn build_overlay_uncached(
         &filters,
         dependencies,
         &mut extract,
+        packed_vanilla.then_some(&mut whiteouts),
     )?;
+    if packed_vanilla {
+        horizon_core::prepared_files::write_overlay(out, vanilla, &whiteouts)?;
+    }
     // What the zips may unpack to, all threads together: a server's pack is a download the
     // player only accepts, and a gigabyte of zeros deflates to a megabyte, so without it a pack
     // at the download limit wrote hundreds of gigabytes here. Vanilla never unpacks a pack.

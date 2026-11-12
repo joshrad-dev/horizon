@@ -208,11 +208,11 @@ fn set_rule_species(species: Vec<String>) {
 /// A pack file's text, None when it's missing or larger than a model may read: its size is
 /// checked before anything is read.
 fn read_small(path: &Path) -> Option<String> {
-    let len = std::fs::metadata(path).ok()?.len();
+    let len = horizon_core::resource_fs::metadata(path).ok()?.len();
     if len > MAX_BYTES as u64 {
         return None;
     }
-    std::fs::read_to_string(path).ok()
+    horizon_core::resource_fs::read_to_string(path).ok()
 }
 
 /// One `optifine/cem/<name>.properties` random-model rule: `models.<n>` selects the model
@@ -757,8 +757,9 @@ impl Legacy {
             .iter()
             .copied()
             .filter(|(_, old)| {
-                root.join(format!("assets/minecraft/textures/{old}.png"))
-                    .is_file()
+                horizon_core::resource_fs::is_file(
+                    root.join(format!("assets/minecraft/textures/{old}.png")),
+                )
             })
             .collect();
         let adult = format!("{}#main", self.model);
