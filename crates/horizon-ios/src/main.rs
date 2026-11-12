@@ -53,6 +53,8 @@ fn main() {
     #[cfg(target_os = "ios")]
     horizon_client_input::window::install_display_shape(display::shape);
     #[cfg(target_os = "ios")]
+    horizon_client_input::window::install_safe_area(display::safe_area);
+    #[cfg(target_os = "ios")]
     horizon_client_input::window::install_pager(pager::HOST);
     #[cfg(target_os = "ios")]
     {

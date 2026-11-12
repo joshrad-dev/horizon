@@ -341,8 +341,15 @@ impl ApplicationHandler for Game<'_> {
         self.previous = Instant::now();
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        if let WindowEvent::Touch(touch) = event {
-            self.touch_event(event_loop, id, touch);
+        if matches!(event, WindowEvent::Touch(_)) {
+            // Touches, as the pointer (`user_window_event`), where the menus and HUD are.
+            let surface = self
+                .renderer
+                .as_ref()
+                .map(|r| [r.config.width, r.config.height]);
+            if let WindowEvent::Touch(touch) = super::touch::into_safe_area(event, surface) {
+                self.touch_event(event_loop, id, touch);
+            }
             return;
         }
         if Self::hardware_drops(&event) {
@@ -382,6 +389,12 @@ impl Game<'_> {
             }
             event => event,
         };
+        // Touches and the pointer, where the menus and HUD are: in the safe area.
+        let surface = self
+            .renderer
+            .as_ref()
+            .map(|r| [r.config.width, r.config.height]);
+        let event = super::touch::into_safe_area(event, surface);
         let key = if self.window.as_ref().is_some_and(|w| w.id() == id)
             && !self.scripted_run()
             && let WindowEvent::KeyboardInput {

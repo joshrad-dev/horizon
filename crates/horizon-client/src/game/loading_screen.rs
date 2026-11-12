@@ -277,6 +277,10 @@ impl Loading {
         else {
             return;
         };
+        // The menus lay out in the window's safe area.
+        if let Some(window) = &self.window {
+            horizon_client::hud::set_safe_area(size, horizon_client::window::safe_insets(window));
+        }
         let mut batch = HudBatch::new(size);
         self.draw_menu(&mut batch);
         self.launcher_editor_draw(&mut batch);
@@ -436,7 +440,13 @@ impl ApplicationHandler for App {
         };
         match self {
             // The startup menu takes a finger as the mouse.
-            App::Loading(loading) => match event {
+            App::Loading(loading) => match super::touch::into_safe_area(
+                event,
+                loading
+                    .renderer
+                    .as_ref()
+                    .map(|r| [r.config.width, r.config.height]),
+            ) {
                 event if loading.launcher_editor_event(&event) => {}
                 WindowEvent::Touch(touch) => {
                     if super::touch::is_pointer(&touch) {

@@ -1666,6 +1666,38 @@ fn clip_polygon(poly: &[HudVertex], axis: usize, limit: f32, keep_below: bool) -
 }
 /// The GUI Scale option (0 = auto).
 pub static GUI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// The surface the safe area belongs to, and its insets (left, top, right, bottom, pixels).
+static SAFE_AREA: std::sync::Mutex<([u32; 2], [u32; 4])> = std::sync::Mutex::new(([0; 2], [0; 4]));
+
+/// The window's safe area, for a surface `surface` pixels big: the menus and HUD keep this far
+/// from its edges (rounded corners, the camera housing, the home indicator), while the world
+/// still fills it. Another surface (an offscreen picture) gets none.
+pub fn set_safe_area(surface: [u32; 2], insets: [u32; 4]) {
+    let insets =
+        if insets[0] + insets[2] + 64 > surface[0] || insets[1] + insets[3] + 64 > surface[1] {
+            [0; 4]
+        } else {
+            insets
+        };
+    *SAFE_AREA
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = (surface, insets);
+}
+
+/// The insets of the safe area on `surface` (none for another surface).
+pub fn safe_insets(surface: [u32; 2]) -> [u32; 4] {
+    let (at, insets) = *SAFE_AREA
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if at == surface { insets } else { [0; 4] }
+}
+
+/// The part of `surface` the menus and HUD use.
+pub fn safe_size(surface: [u32; 2]) -> [u32; 2] {
+    let [l, t, r, b] = safe_insets(surface);
+    [surface[0] - l - r, surface[1] - t - b]
+}
+
 /// One frame of overlay geometry in GUI pixels.
 pub struct HudBatch {
     pub pictures: Vec<Arc<pictures::Picture>>,
@@ -1673,6 +1705,9 @@ pub struct HudBatch {
     pub scale: f32,
     pub width: f32,
     pub height: f32,
+    /// The safe area's insets in GUI pixels (left, top, right, bottom): the GUI is laid out
+    /// inside them; a fill over all of it reaches the surface's edges (`edge_to_edge`).
+    pub insets: [f32; 4],
     /// Glyph pixels to upload into the atlas before drawing.
     pub patches: Vec<crate::font::Patch>,
     /// Vertex ranges with another blend or depth/scissor state, in order.
@@ -1731,6 +1766,9 @@ impl HudBatch {
     /// Window.calculateScale: the largest scale keeping >= 320x240 GUI pixels,
     /// capped by the GUI Scale option (0 = auto).
     pub fn new(window: [u32; 2]) -> Self {
+        // The menus and HUD lay out in the window's safe area (`set_safe_area`).
+        let insets = safe_insets(window);
+        let window = safe_size(window);
         let limit = GUI_SCALE.load(std::sync::atomic::Ordering::Relaxed);
         let mut scale = 1;
         while (limit == 0 || scale < limit)
@@ -1753,7 +1791,39 @@ impl HudBatch {
             game_time: 0.0,
             blur_at: 0,
             inline_profiles: Vec::new(),
+            insets: insets.map(|v| v as f32 / scale as f32),
         }
+    }
+    /// A rectangle across the whole GUI reaches the surface's edges past the safe area: a
+    /// screen's dimming or tint (drawn whole or row by row), a background, a band. One across
+    /// the width reaches the sides, and the top or bottom too where it touches them; the same
+    /// down the height. Anything smaller stays where it was put.
+    fn edge_to_edge(&self, x: f32, y: f32, w: f32, h: f32) -> (f32, f32, f32, f32) {
+        let [l, t, r, b] = self.insets;
+        let across = x <= 0.0 && x + w >= self.width;
+        let down = y <= 0.0 && y + h >= self.height;
+        let (mut x0, mut y0, mut x1, mut y1) = (x, y, x + w, y + h);
+        if across {
+            x0 -= l;
+            x1 += r;
+            if y <= 0.0 {
+                y0 -= t;
+            }
+            if y + h >= self.height {
+                y1 += b;
+            }
+        }
+        if down {
+            y0 = y0.min(y - t);
+            y1 = y1.max(y + h + b);
+            if x <= 0.0 {
+                x0 = x0.min(x - l);
+            }
+            if x + w >= self.width {
+                x1 = x1.max(x + w + r);
+            }
+        }
+        (x0, y0, x1 - x0, y1 - y0)
     }
     /// Draw the vertices added since `start` with the inverting blend.
     pub fn invert_since(&mut self, start: usize) {
@@ -2087,6 +2157,7 @@ impl HudBatch {
         }
     }
     pub fn fill(&mut self, atlas: &HudAtlas, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        let (x, y, w, h) = self.edge_to_edge(x, y, w, h);
         let mut r = atlas.white;
         let (cu, cv) = ((r.u0 + r.u1) / 2.0, (r.v0 + r.v1) / 2.0);
         r.u0 = cu;
@@ -2109,6 +2180,7 @@ impl HudBatch {
         top: u32,
         bottom: u32,
     ) {
+        let (x, y, w, h) = self.edge_to_edge(x, y, w, h);
         let r = atlas.white;
         let uv = [(r.u0 + r.u1) / 2.0, (r.v0 + r.v1) / 2.0];
         let p = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
@@ -2526,6 +2598,8 @@ struct HudUniform {
     size: [f32; 4],
     /// `EndPortalFill`: the two sprites, then the game time in x.
     end_portal: [[f32; 4]; 3],
+    /// Where the GUI's origin is on the surface, in pixels (x, y): the safe area's corner.
+    origin: [f32; 4],
 }
 impl HudUniform {
     fn new(size: [f32; 4], fill: EndPortalFill, glint_colour: u32) -> Self {
@@ -2542,6 +2616,7 @@ impl HudUniform {
                 fill.sprites[1],
                 [fill.game_time, tint[0], tint[1], tint[2]],
             ],
+            origin: [0.0; 4],
         }
     }
 }
@@ -2945,23 +3020,29 @@ impl HudRenderer {
             0,
             bytemuck::cast_slice(&batch.vertices),
         );
-        uploads.buffer(
-            encoder,
-            &self.uniform,
-            0,
-            bytemuck::bytes_of(&HudUniform::new(
-                [
-                    size[0] as f32,
-                    size[1] as f32,
-                    batch.scale * self.zoom,
-                    batch.glint_alpha,
-                ],
-                batch.end_portal,
-                batch.glint_colour,
-            )),
+        // The GUI is laid out in the safe area: its origin is that area's corner.
+        let [left, top, ..] = safe_insets(size);
+        let mut uniform = HudUniform::new(
+            [
+                size[0] as f32,
+                size[1] as f32,
+                batch.scale * self.zoom,
+                batch.glint_alpha,
+            ],
+            batch.end_portal,
+            batch.glint_colour,
         );
+        uniform.origin = [left as f32, top as f32, 0.0, 0.0];
+        uploads.buffer(encoder, &self.uniform, 0, bytemuck::bytes_of(&uniform));
         if let Some(pack_text) = &self.pack_text {
-            pack_text.prepare(uploads, encoder, batch, size, batch.scale * self.zoom);
+            pack_text.prepare(
+                uploads,
+                encoder,
+                batch,
+                size,
+                batch.scale * self.zoom,
+                [left as f32, top as f32],
+            );
         }
     }
     /// Draw the batch `prepare` staged.
@@ -3000,6 +3081,7 @@ impl HudRenderer {
         if vertices.is_empty() || size.contains(&0) {
             return;
         }
+        let [left, top, ..] = safe_insets(size);
         let mut attachments = [None, None];
         attachments[0] = Some(wgpu::RenderPassColorAttachment {
             view: target,
@@ -3054,7 +3136,9 @@ impl HudRenderer {
             pass.set_bind_group(0, &self.group, &[]);
             pass.set_vertex_buffer(0, self.buffer.slice(..));
             if let Some(clip) = clip {
+                // The clip is the GUI's, whose origin is the safe area's corner.
                 let [x, y, w, h] = clip.map(|v| (v as f32 * self.zoom) as u32);
+                let (x, y) = (x + left, y + top);
                 let (x, y) = (x.min(size[0]), y.min(size[1]));
                 let (w, h) = (w.min(size[0] - x), h.min(size[1] - y));
                 if w == 0 || h == 0 {
@@ -4865,6 +4949,43 @@ texture=wide",
         }
     }
     #[test]
+    fn the_gui_lays_out_in_the_safe_area_and_tints_reach_the_edges() {
+        // A surface no other test uses: the safe area belongs to one surface size.
+        let surface = [1206, 612];
+        set_safe_area(surface, [63, 21, 63, 21]);
+        let batch = HudBatch::new(surface);
+        let scale = batch.scale;
+        assert_eq!(batch.width, ((1206.0 - 126.0) / scale).ceil());
+        assert_eq!(batch.height, ((612.0 - 42.0) / scale).ceil());
+        // Another surface (an offscreen picture) has none.
+        assert_eq!(safe_insets([1206, 611]), [0; 4]);
+        let atlas =
+            HudAtlas::build(std::path::Path::new("/nonexistent/horizon-test-assets")).unwrap();
+        let mut batch = batch;
+        let w = batch.width;
+        // A tint's top row reaches the sides and the top; a button stays put.
+        batch.fill(&atlas, 0.0, 0.0, w, 1.0, 0xffff_ffff);
+        batch.fill(&atlas, 10.0, 10.0, 20.0, 20.0, 0xffff_ffff);
+        let xs = |range: std::ops::Range<usize>| {
+            let v = &batch.vertices[range];
+            let min = |f: fn(&HudVertex) -> f32| v.iter().map(f).fold(f32::MAX, f32::min);
+            let max = |f: fn(&HudVertex) -> f32| v.iter().map(f).fold(f32::MIN, f32::max);
+            [
+                min(|v| v.pos[0]),
+                min(|v| v.pos[1]),
+                max(|v| v.pos[0]),
+                max(|v| v.pos[1]),
+            ]
+        };
+        let n = batch.vertices.len() / 2;
+        assert_eq!(
+            xs(0..n),
+            [-63.0 / scale, -21.0 / scale, w + 63.0 / scale, 1.0]
+        );
+        assert_eq!(xs(n..2 * n), [10.0, 10.0, 30.0, 30.0]);
+        set_safe_area(surface, [0; 4]);
+    }
+    #[test]
     fn container_origins_use_java_integer_division() {
         // Odd scaled dimensions, odd image sizes and an oversized panel.
         for (width, height) in [(640, 360), (641, 361), (456, 256), (534, 300), (100, 100)] {
@@ -4874,6 +4995,7 @@ texture=wide",
                 scale: 3.0,
                 width: width as f32,
                 height: height as f32,
+                insets: [0.0; 4],
                 patches: Vec::new(),
                 blends: Vec::new(),
                 end_portal: EndPortalFill::default(),

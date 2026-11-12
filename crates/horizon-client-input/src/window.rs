@@ -1114,6 +1114,31 @@ static DISPLAY_SHAPE: std::sync::OnceLock<DisplayShapeQuery> = std::sync::OnceLo
 pub static FORCE_DIVISION: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Asks the platform for a window's safe area: the insets (left, top, right, bottom, in
+/// points) its rounded corners, camera housing and home indicator leave free (UIKit's
+/// `safeAreaInsets`).
+pub type SafeAreaQuery = fn(&winit::window::Window) -> [f64; 4];
+static SAFE_AREA: std::sync::OnceLock<SafeAreaQuery> = std::sync::OnceLock::new();
+
+/// Installs the platform's safe area query; the first one stays.
+pub fn install_safe_area(query: SafeAreaQuery) {
+    let _ = SAFE_AREA.set(query);
+}
+
+/// The insets, in pixels, the game's menus and HUD keep clear of: the platform's safe area,
+/// made the same on opposite sides so the HUD's middle (the crosshair) stays the view's.
+/// None without a platform query.
+pub fn safe_insets(window: &winit::window::Window) -> [u32; 4] {
+    let Some(query) = SAFE_AREA.get() else {
+        return [0; 4];
+    };
+    let [left, top, right, bottom] = query(window);
+    let scale = window.scale_factor();
+    let px = |a: f64, b: f64| (a.max(b).max(0.0) * scale).round() as u32;
+    let (x, y) = (px(left, right), px(top, bottom));
+    [x, y, x, y]
+}
+
 /// Installs the platform's display query; the first one stays.
 pub fn install_display_shape(query: DisplayShapeQuery) {
     let _ = DISPLAY_SHAPE.set(query);

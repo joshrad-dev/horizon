@@ -257,8 +257,14 @@ impl PackText {
         batch: &HudBatch,
         size: [u32; 2],
         scale: f32,
+        origin: [f32; 2],
     ) {
-        uploads.buffer(encoder, &self.uniform, 0, &uniforms(batch, size, scale));
+        uploads.buffer(
+            encoder,
+            &self.uniform,
+            0,
+            &uniforms(batch, size, scale, origin),
+        );
     }
 
     /// Draw `range` (whole glyph quads) with the pack's shader; the caller sets its own
@@ -280,7 +286,8 @@ impl PackText {
 /// projection, 1000 to 11000 deep, in GL's depth range), `DynamicTransforms` (the GUI's model view
 /// moving 11000 back, colour modulator white) and an empty `Fog`.
 /// `scale`: target pixels per GUI pixel (`batch.scale`, times `HudRenderer::zoom`).
-fn uniforms(batch: &HudBatch, size: [u32; 2], scale: f32) -> Vec<u8> {
+/// `origin`: the GUI's corner on the surface, in pixels (the safe area's).
+fn uniforms(batch: &HudBatch, size: [u32; 2], scale: f32, origin: [f32; 2]) -> Vec<u8> {
     let mut data = vec![0f32; 256];
     let globals = 0;
     data[globals + 3] = batch.glint_alpha;
@@ -294,8 +301,8 @@ fn uniforms(batch: &HudBatch, size: [u32; 2], scale: f32) -> Vec<u8> {
     data[projection] = 2.0 / w;
     data[projection + 5] = -2.0 / h;
     data[projection + 10] = 2.0 / (near - far);
-    data[projection + 12] = -1.0;
-    data[projection + 13] = 1.0;
+    data[projection + 12] = -1.0 + 2.0 * origin[0] / size[0] as f32;
+    data[projection + 13] = 1.0 - 2.0 * origin[1] / size[1] as f32;
     data[projection + 14] = (far + near) / (near - far);
     data[projection + 15] = 1.0;
     let transforms = 128;
@@ -335,7 +342,7 @@ mod tests {
         let mut batch = HudBatch::new([1920, 1080]);
         batch.scale = 4.0;
         let data: Vec<f32> =
-            bytemuck::cast_slice(&uniforms(&batch, [1920, 1080], batch.scale)).to_vec();
+            bytemuck::cast_slice(&uniforms(&batch, [1920, 1080], batch.scale, [0.0; 2])).to_vec();
         let column = |matrix: usize, c: usize| &data[matrix + 4 * c..matrix + 4 * c + 4];
         let apply = |matrix: usize, v: [f32; 4]| -> [f32; 4] {
             std::array::from_fn(|r| (0..4).map(|c| column(matrix, c)[r] * v[c]).sum())

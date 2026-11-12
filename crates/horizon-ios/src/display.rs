@@ -9,6 +9,40 @@ use objc2_core_foundation::CGRect;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
+/// UIKit's `UIEdgeInsets`.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct EdgeInsets {
+    top: f64,
+    left: f64,
+    bottom: f64,
+    right: f64,
+}
+
+// SAFETY: the layout and encoding of UIKit's `UIEdgeInsets`: four `CGFloat`s (64-bit on every
+// device this runs on), top, left, bottom, right.
+unsafe impl objc2::encode::Encode for EdgeInsets {
+    const ENCODING: objc2::encode::Encoding = objc2::encode::Encoding::Struct(
+        "UIEdgeInsets",
+        &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING],
+    );
+}
+
+/// The view's safe area (`safeAreaInsets`): left, top, right, bottom, in points.
+pub fn safe_area(window: &Window) -> [f64; 4] {
+    let Ok(handle) = window.window_handle() else {
+        return [0.0; 4];
+    };
+    let RawWindowHandle::UiKit(handle) = handle.as_raw() else {
+        return [0.0; 4];
+    };
+    let view = handle.ui_view.as_ptr().cast::<AnyObject>();
+    // SAFETY: the window's view is alive while the window is, and this runs on the main thread
+    // (winit's), where UIView may be asked; `safeAreaInsets` exists since iOS 11.
+    let insets: EdgeInsets = unsafe { msg_send![&*view, safeAreaInsets] };
+    [insets.left, insets.top, insets.right, insets.bottom]
+}
+
 /// `UIViewReservedRegionQueryOptionsIncludeInactive`: the fold while the device lies flat too,
 /// as iPhone Duo keeps it.
 const INCLUDE_INACTIVE: usize = 1;

@@ -32,8 +32,8 @@ mod scheme_name {
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<ControlScheme, D::Error> {
         let name: String = serde::Deserialize::deserialize(d)?;
         Ok(match name.as_str() {
-            "buttons" => ControlScheme::Buttons,
-            _ => ControlScheme::Gestures,
+            "gestures" => ControlScheme::Gestures,
+            _ => ControlScheme::Buttons,
         })
     }
 }

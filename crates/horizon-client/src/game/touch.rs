@@ -156,6 +156,34 @@ pub(super) struct TouchControls {
     scheme_read: bool,
 }
 
+/// A touch's or the pointer's place, from the window's corner to the safe area's, where the
+/// menus and HUD are laid out (`hud::set_safe_area`). Every other event stays as it is.
+pub(super) fn into_safe_area(event: WindowEvent, surface: Option<[u32; 2]>) -> WindowEvent {
+    let Some(surface) = surface else {
+        return event;
+    };
+    let [left, top, ..] = horizon_client::hud::safe_insets(surface);
+    if left == 0 && top == 0 {
+        return event;
+    }
+    let (dx, dy) = (f64::from(left), f64::from(top));
+    match event {
+        WindowEvent::CursorMoved {
+            device_id,
+            position,
+        } => WindowEvent::CursorMoved {
+            device_id,
+            position: winit::dpi::PhysicalPosition::new(position.x - dx, position.y - dy),
+        },
+        WindowEvent::Touch(mut touch) => {
+            touch.location.x -= dx;
+            touch.location.y -= dy;
+            WindowEvent::Touch(touch)
+        }
+        event => event,
+    }
+}
+
 /// A touch as the mouse: where it is, then a left press or release.
 pub(super) fn as_mouse(touch: Touch) -> Vec<WindowEvent> {
     let device_id = DeviceId::dummy();
@@ -202,7 +230,8 @@ impl Game<'_> {
 
     /// The Buttons scheme's controls, read with the launcher's choice the first time.
     fn touch_buttons_load(&mut self) {
-        if self.touch.scheme_read {
+        // Only on a touch screen: a desktop never shows them until a finger touches it.
+        if self.touch.scheme_read || !self.touch_controls() {
             return;
         }
         self.touch.scheme_read = true;
@@ -295,6 +324,16 @@ impl Game<'_> {
         }
     }
 
+    /// The window's safe area, once a frame, for the menus and HUD (`hud::set_safe_area`).
+    pub(super) fn sync_safe_area(&self) {
+        if let (Some(window), Some(r)) = (&self.window, &self.renderer) {
+            horizon_client::hud::set_safe_area(
+                [r.config.width, r.config.height],
+                horizon_client::window::safe_insets(window),
+            );
+        }
+    }
+
     pub(super) fn touch_playing(&self) -> bool {
         self.title.is_none() && self.screen == Screen::Playing && self.player.is_some()
     }
@@ -358,10 +397,21 @@ impl Game<'_> {
         if until.is_some_and(|until| Instant::now() > until) {
             return None;
         }
-        let (w, h) = self.gui_size();
+        // The point is the HUD's, in the safe area; the view fills the whole surface.
+        let surface = self
+            .renderer
+            .as_ref()
+            .map_or([1, 1], |r| [r.config.width.max(1), r.config.height.max(1)]);
+        let [left, top, ..] = horizon_client::hud::safe_insets(surface);
+        let scale = self.touch_scale();
+        let (w, h) = (surface[0] as f32, surface[1] as f32);
+        let px = [
+            point[0] * scale + left as f32,
+            point[1] * scale + top as f32,
+        ];
         // Normalised device coordinates of the point, y up.
-        let nx = f64::from(point[0] / w * 2.0 - 1.0);
-        let ny = f64::from(1.0 - point[1] / h * 2.0);
+        let nx = f64::from(px[0] / w * 2.0 - 1.0);
+        let ny = f64::from(1.0 - px[1] / h * 2.0);
         let fov = if self.touch.fov > 1.0 {
             self.touch.fov
         } else {
@@ -526,10 +576,11 @@ impl Game<'_> {
             }
             Kind::Pending => self.touch_pending(&mut finger, ended),
             Kind::Buttons => {
-                let size = self
-                    .renderer
-                    .as_ref()
-                    .map_or([1, 1], |r| [r.config.width.max(1), r.config.height.max(1)]);
+                // The buttons are laid out in the safe area, as the HUD that draws them.
+                let size = self.renderer.as_ref().map_or([1, 1], |r| {
+                    horizon_client::hud::safe_size([r.config.width, r.config.height])
+                        .map(|v| v.max(1))
+                });
                 let point = [
                     touch.location.x as f32 / size[0] as f32,
                     touch.location.y as f32 / size[1] as f32,

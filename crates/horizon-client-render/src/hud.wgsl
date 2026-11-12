@@ -4,6 +4,8 @@ struct Hud {
     // end_portal.png, then vanilla's GameTime in x and PvP & HUD's glint colour in yzw
     // (y below 0: vanilla's).
     end_portal: array<vec4<f32>, 3>,
+    // The GUI's origin on the surface, in pixels (xy): the safe area's corner.
+    origin: vec4<f32>,
 }
 @group(0) @binding(0) var<uniform> hud: Hud;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
@@ -23,7 +25,7 @@ struct Out {
     @location(3) glint_uv: vec2<f32>,
 }
 @vertex fn vs_main(@location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) color: vec4<f32>, @location(3) depth: f32, @location(4) glint_uv: vec2<f32>) -> Out {
-    let pixels = pos * hud.size.z;
+    let pixels = pos * hud.size.z + hud.origin.xy;
     var out: Out;
     out.clip = vec4(pixels.x / hud.size.x * 2.0 - 1.0, 1.0 - pixels.y / hud.size.y * 2.0, depth, 1.0);
     out.uv = uv;

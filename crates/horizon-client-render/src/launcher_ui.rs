@@ -73,9 +73,9 @@ pub enum Action {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ControlScheme {
     /// The Pocket Edition's gestures, no buttons (game/touch.rs).
-    #[default]
     Gestures,
     /// On-screen buttons, placed and bound in the layout editor.
+    #[default]
     Buttons,
 }
 

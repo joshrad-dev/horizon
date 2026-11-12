@@ -11073,6 +11073,7 @@ impl Game<'_> {
                 WindowEvent::RedrawRequested => {
                     horizon_client::spans::time("recover_device", || self.recover_device())?;
                     self.observe_fullscreen();
+                    self.sync_safe_area();
                     self.sync_ime();
                     let now = Instant::now();
                     let frame_cpu = self

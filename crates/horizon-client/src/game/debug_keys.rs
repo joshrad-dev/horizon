@@ -327,8 +327,9 @@ impl Game<'_> {
         }
         let first_vertex = batch.vertices.len();
         let framebuffer = size.map(|v| v as i32);
+        // It lays out in the safe area, as the rest of the HUD.
         let (scale, [width, height]) = debug_overlay::scale(
-            framebuffer,
+            horizon_client::hud::safe_size(size).map(|v| v as i32),
             batch.scale as i32,
             self.settings.file.int("debugGuiScale"),
             self.settings.force_unicode,
