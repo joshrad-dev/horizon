@@ -356,6 +356,8 @@ impl AppState {
             s => bug!("unexpected state {:?}", s),
         };
         self.set_state(AppStateImpl::ProcessingRedraws { handler, active_control_flow });
+        let mut queued_gpu_redraws = queued_gpu_redraws;
+        DEFERRED_GPU_REDRAWS.with_borrow_mut(|d| queued_gpu_redraws.extend(d.drain()));
         queued_gpu_redraws
     }
 
@@ -446,13 +448,24 @@ pub(crate) fn queue_gl_or_metal_redraw(mtm: MainThreadMarker, window: Retained<W
         | &mut AppStateImpl::InUserCallback { ref mut queued_gpu_redraws, .. } => {
             let _ = queued_gpu_redraws.insert(window);
         },
-        s @ &mut AppStateImpl::ProcessingRedraws { .. }
-        | s @ &mut AppStateImpl::Waiting { .. }
-        | s @ &mut AppStateImpl::PollFinished { .. } => bug!("unexpected state {:?}", s),
+        // Horizon: while redraws are handed out, or between cycles, the next cycle's.
+        &mut AppStateImpl::ProcessingRedraws { .. }
+        | &mut AppStateImpl::Waiting { .. }
+        | &mut AppStateImpl::PollFinished { .. } => {
+            DEFERRED_GPU_REDRAWS.with_borrow_mut(|d| {
+                let _ = d.insert(window);
+            });
+        },
         &mut AppStateImpl::Terminated => {
             panic!("Attempt to create a `Window` after the app has terminated")
         },
     }
+}
+
+thread_local! {
+    /// Horizon: GPU redraws asked for while redraws were being handed out, for the next cycle.
+    static DEFERRED_GPU_REDRAWS: RefCell<HashSet<Retained<WinitUIWindow>>> =
+        RefCell::new(HashSet::new());
 }
 
 pub(crate) fn will_launch(mtm: MainThreadMarker, queued_handler: EventLoopHandler) {
@@ -578,10 +591,9 @@ pub(crate) fn handle_nonuser_events<I: IntoIterator<Item = EventWrapper>>(
                 _ => unreachable!(),
             };
             this.app_state = Some(if processing_redraws {
-                bug_assert!(
-                    queued_gpu_redraws.is_empty(),
-                    "redraw queued while processing redraws"
-                );
+                // Horizon: a redraw asked for while drawing (the game asks for its next frame
+                // from its redraw) is the next cycle's, not a bug.
+                DEFERRED_GPU_REDRAWS.with_borrow_mut(|d| d.extend(queued_gpu_redraws));
                 AppStateImpl::ProcessingRedraws { handler, active_control_flow }
             } else {
                 AppStateImpl::ProcessingEvents { handler, queued_gpu_redraws, active_control_flow }

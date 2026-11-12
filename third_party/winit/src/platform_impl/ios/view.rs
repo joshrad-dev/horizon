@@ -2,8 +2,10 @@
 use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
-use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2::{declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+use objc2::runtime::{AnyClass, NSObjectProtocol, ProtocolObject};
+use objc2::{
+    class, declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass,
+};
 use objc2_foundation::{CGFloat, CGPoint, CGRect, MainThreadMarker, NSObject, NSSet, NSString};
 use objc2_ui_kit::{
     UICoordinateSpace, UIEvent, UIForceTouchCapability, UIGestureRecognizer,
@@ -48,6 +50,15 @@ declare_class!(
     }
 
     unsafe impl WinitView {
+        // Horizon: the view's own layer is a CAMetalLayer, which the renderer draws into
+        // directly. Otherwise raw-window-metal adds an opaque CAMetalLayer sublayer for each
+        // surface made and never removes them, and the app (which makes several while it
+        // starts) could present to one hidden under another: a black screen.
+        #[method(layerClass)]
+        fn layer_class() -> &'static AnyClass {
+            class!(CAMetalLayer)
+        }
+
         #[method(drawRect:)]
         fn draw_rect(&self, rect: CGRect) {
             let mtm = MainThreadMarker::new().unwrap();

@@ -546,8 +546,11 @@ impl Window {
 
         let view = WinitView::new(mtm, &window_attributes, frame);
 
+        // Horizon: the view's layer (`layerClass`) says, not the view, which never is one.
+        // SAFETY: `-[UIView layer]` returns the view's non-null backing layer.
+        let layer: Retained<NSObject> = unsafe { msg_send_id![&view, layer] };
         let gl_or_metal_backed =
-            view.isKindOfClass(class!(CAMetalLayer)) || view.isKindOfClass(class!(CAEAGLLayer));
+            layer.isKindOfClass(class!(CAMetalLayer)) || layer.isKindOfClass(class!(CAEAGLLayer));
 
         let view_controller = WinitViewController::new(mtm, &window_attributes, &view);
         let window = WinitUIWindow::new(mtm, &window_attributes, frame, &view_controller);
