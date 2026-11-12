@@ -73,6 +73,18 @@ fn main() {
         toolchain.join("lib/swift").join(platform).display()
     );
     println!("cargo:rustc-link-lib=static=HorizonDeck");
+    // Swift's `#available` calls compiler-rt's `__isPlatformVersionAtLeast`: clang's driver links
+    // its runtime by itself, but a release build's link (LTO) left it out, so name it.
+    let clang_rt = run(&[
+        "--sdk",
+        sdk,
+        "clang",
+        &format!(
+            "--print-file-name=libclang_rt.{}.a",
+            if platform == "iphoneos" { "ios" } else { "iossim" }
+        ),
+    ]);
+    println!("cargo:rustc-link-arg-bins={clang_rt}");
     for framework in ["SwiftUI", "UIKit", "Foundation"] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
