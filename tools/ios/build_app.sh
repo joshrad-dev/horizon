@@ -17,7 +17,8 @@
 # Env: PROFILE (cargo profile, default fast), RESOURCES (default .local/horizon-client/26.3),
 #      BUNDLE_ID (default dev.horizonlab.horizon.ios), BUILD_NUMBER (CFBundleVersion, default 1),
 #      SOUND_QUALITY (oggenc -q, default 0), LANGUAGES (default en_us), NO_SOUNDS=1 to leave
-#      the sounds out.
+#      the sounds out, HORIZON_MSA_CLIENT_ID (the Azure app the launcher's Microsoft sign-in
+#      uses: Horizon's own builds only, docs/forking.md; without it the sign-in is off).
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"

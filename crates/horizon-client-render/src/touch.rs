@@ -11,12 +11,14 @@
 //! D-pad, a button, or a look gesture on the world) and keeps it until it
 //! lifts, so moving, looking and pressing never take each other's fingers.
 pub mod aim;
+pub mod draw;
+pub mod editor;
 pub mod layout;
 pub use aim::{
     attack_indicator, camera_delta, hotbar_slot, item_places_entity_on_tap, item_uses_on_tap,
     projectile_crosshair, screen_direction,
 };
-pub use layout::{Control, Mode, Placement, Settings};
+pub use layout::{Control, CustomButton, Mode, Placement, Settings};
 
 use crate::gamepad::{Button, PadState};
 use std::collections::BTreeMap;
@@ -58,6 +60,26 @@ enum Role {
     Shield,
     /// Holds a controller button.
     Button(Button),
+    /// Holds the key of the player's button with this index.
+    Key(usize),
+}
+
+/// One control as drawn: where (`[x, y, w, h]`, 0..1 of the surface), how opaque, and whether
+/// a finger holds it (or a toggle is on).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Drawn {
+    pub what: Shown,
+    pub rect: [f32; 4],
+    pub opacity: f32,
+    pub pressed: bool,
+}
+
+/// What a [`Drawn`] control is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shown {
+    Control(Control),
+    /// The player's button with this index in [`Settings::custom`].
+    Custom(usize),
 }
 
 /// The on-screen controls' input state. The game feeds it touches with
@@ -108,10 +130,20 @@ pub struct TouchControls {
     last_marker: Option<([f32; 2], Instant)>,
     last_sneak_tap: Option<Instant>,
     sprint_latched: bool,
+    /// The player's toggle buttons that are on, by index.
+    toggled: std::collections::BTreeSet<usize>,
     aspect: f32,
 }
 
 impl TouchControls {
+    /// The controls for a saved layout.
+    pub fn new(settings: Settings) -> Self {
+        Self {
+            settings,
+            ..Self::default()
+        }
+    }
+
     /// Whether attack and use act on the crosshair rather than on a tap.
     pub fn crosshair(&self) -> bool {
         self.force_crosshair || self.settings.crosshair()
@@ -187,6 +219,101 @@ impl TouchControls {
             }
             layout::contains(self.placement(c).rect(self.aspect()), point)
         })
+    }
+
+    /// The player's button under `point`, the last-drawn one first.
+    pub fn custom_at(&self, point: [f32; 2]) -> Option<usize> {
+        if self.auxiliary_only {
+            return None;
+        }
+        (0..self.settings.custom.len())
+            .rev()
+            .find(|&i| layout::contains(self.custom_placement(i).rect(self.aspect()), point))
+    }
+
+    /// Where the player's button `i` is on this surface.
+    pub fn custom_placement(&self, i: usize) -> Placement {
+        let mut p = self.settings.custom[i].placement;
+        if self.settings.left_handed {
+            p.center[0] = 1.0 - p.center[0];
+        }
+        self.fit(p)
+    }
+
+    /// Where a built-in control is on this surface, shown or not (the layout editor shows them
+    /// all).
+    pub fn control_rect(&self, c: Control) -> [f32; 4] {
+        self.placement(c).rect(self.aspect())
+    }
+
+    /// Whether a built-in control shows now.
+    pub fn shows(&self, c: Control) -> bool {
+        self.visible(c)
+    }
+
+    /// The controls to draw, in drawing order: the built-in ones that show, then the player's.
+    /// A dynamic joystick shows only while a thumb holds it.
+    pub fn drawn(&self) -> Vec<Drawn> {
+        let aspect = self.aspect();
+        let held_button = |b: Button| {
+            self.fingers
+                .values()
+                .any(|(r, _)| matches!(r, Role::Button(x) if *x == b))
+        };
+        let mut out = Vec::new();
+        for c in Control::ALL {
+            if !self.visible(c) || (c == Control::Move && self.dynamic_joystick()) {
+                continue;
+            }
+            let p = self.placement(c);
+            let pressed = match c {
+                Control::Move => self.moving(),
+                Control::Shield => self.shield_held(),
+                Control::Sprint if self.settings.sprint_toggle => self.sprint_latched,
+                _ => Self::button(c).is_some_and(held_button),
+            };
+            out.push(Drawn {
+                what: Shown::Control(c),
+                rect: p.rect(aspect),
+                opacity: p.opacity,
+                pressed,
+            });
+        }
+        for i in 0..self.settings.custom.len() {
+            let p = self.custom_placement(i);
+            let held = self
+                .fingers
+                .values()
+                .any(|(r, _)| matches!(r, Role::Key(k) if *k == i));
+            out.push(Drawn {
+                what: Shown::Custom(i),
+                rect: p.rect(aspect),
+                opacity: p.opacity,
+                pressed: held || self.toggled.contains(&i),
+            });
+        }
+        out
+    }
+
+    /// The joystick while a thumb holds it: its centre, its radius (a fraction of the surface
+    /// height) and where the thumb is, kept within the rim.
+    pub fn stick(&self) -> Option<([f32; 2], f32, [f32; 2])> {
+        let (anchor, point) = self.fingers.values().find_map(|(r, point)| match r {
+            Role::Move(anchor) => Some((*anchor, *point)),
+            _ => None,
+        })?;
+        let radius = self.placement(Control::Move).size / 2.0;
+        let aspect = self.aspect();
+        let mut d = [(point[0] - anchor[0]) * aspect, point[1] - anchor[1]];
+        let length = d[0].hypot(d[1]);
+        if length > radius {
+            d = d.map(|v| v * radius / length);
+        }
+        Some((
+            anchor,
+            radius,
+            [anchor[0] + d[0] / aspect, anchor[1] + d[1]],
+        ))
     }
 
     fn moving(&self) -> bool {
@@ -394,6 +521,16 @@ impl TouchControls {
     }
 
     fn lift(&mut self, id: u64) {
+        if let Some((Role::Key(i), _)) = self.fingers.get(&id) {
+            let i = *i;
+            self.fingers.remove(&id);
+            if let Some(button) = self.settings.custom.get(i)
+                && !button.toggle
+            {
+                self.key_events.push((button.key.clone(), false));
+            }
+            return;
+        }
         let Some((
             Role::Look {
                 start,
@@ -415,6 +552,29 @@ impl TouchControls {
     }
 
     fn land(&mut self, id: u64, point: [f32; 2]) {
+        if let Some(i) = self.custom_at(point) {
+            let button = &self.settings.custom[i];
+            self.clicked = true;
+            let down = if button.toggle {
+                // Each touch flips it; the finger holds nothing.
+                if self.toggled.insert(i) {
+                    true
+                } else {
+                    self.toggled.remove(&i);
+                    false
+                }
+            } else {
+                true
+            };
+            self.key_events.push((button.key.clone(), down));
+            let role = if button.toggle {
+                Role::Ignore
+            } else {
+                Role::Key(i)
+            };
+            self.fingers.insert(id, (role, point));
+            return;
+        }
         let role = match self.control_at(point) {
             Some(Control::Move) if !self.moving() => Role::Move(if self.dynamic_joystick() {
                 point
@@ -492,6 +652,21 @@ impl TouchControls {
 
     /// Lets go of everything: fingers, latched presses, requests.
     pub fn clear(&mut self) {
+        // Keys the player's buttons hold, or turned on, are let go.
+        let held: Vec<usize> = self
+            .fingers
+            .values()
+            .filter_map(|(r, _)| match r {
+                Role::Key(i) => Some(*i),
+                _ => None,
+            })
+            .chain(std::mem::take(&mut self.toggled))
+            .collect();
+        for i in held {
+            if let Some(button) = self.settings.custom.get(i) {
+                self.key_events.push((button.key.clone(), false));
+            }
+        }
         self.fingers.clear();
         self.last_sneak_tap = None;
         self.sprint_latched = false;
@@ -611,7 +786,7 @@ impl TouchControls {
                 Role::Button(Button::LeftTrigger) | Role::Shield => state.triggers[0] = 1.0,
                 Role::Button(Button::RightTrigger) => state.triggers[1] = 1.0,
                 Role::Button(b) => state.set(*b, true),
-                Role::Look { .. } | Role::Ignore => {}
+                Role::Look { .. } | Role::Ignore | Role::Key(_) => {}
             }
         }
         state

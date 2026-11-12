@@ -5984,8 +5984,9 @@ impl Game<'_> {
                 && (!spectator || self.spectator_crosshair())
                 && !self.debug_crosshair()
                 && !self.overlay_holds_view()
-                // Touch controls aim where the finger is, as the Pocket Edition did.
-                && !self.touch_controls()
+                // Touch gestures aim where the finger is, as the Pocket Edition did; the buttons'
+                // crosshair schemes keep it.
+                && !self.touch_hides_crosshair()
             {
                 let attack = (indicator == 1).then_some(strength);
                 let full = attack.is_some_and(|a| {

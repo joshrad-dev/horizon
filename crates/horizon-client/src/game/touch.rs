@@ -20,6 +20,11 @@
 //!
 //! Distances and speeds are in points (window pixels over the scale factor), so the gestures
 //! feel the same on every screen whatever its GUI scale.
+//!
+//! The launcher's other scheme, **Buttons**, puts on-screen buttons and a joystick over play
+//! instead (`horizon_client::touch`, laid out in the launcher's editor and saved in
+//! [`LAYOUT_FILE`]): the fingers that land in play go to them, and they press the virtual pad's
+//! buttons, turn the view, and send the keys of the player's own buttons.
 use super::event_loop::EventLoopCtl;
 use super::{Game, Screen};
 use horizon_client::gamepad::Button;
@@ -55,6 +60,14 @@ const AIM_LINGER: Duration = Duration::from_millis(250);
 /// height, from the lower left); the rest of the view looks and acts.
 const WALK_WIDTH: f32 = 0.33;
 const WALK_HEIGHT: f32 = 0.6;
+/// The Buttons scheme's layout, in the game folder.
+pub(super) const LAYOUT_FILE: &str = "horizon-touch-layout.json";
+/// Degrees of turn per mouse count at the default sensitivity (`MouseHandler.turnPlayer`).
+const DEGREES_PER_COUNT: f32 = 0.15;
+
+pub(super) fn layout_path() -> std::path::PathBuf {
+    Game::game_dir().join(LAYOUT_FILE)
+}
 
 /// Which half of the game's view a finger landed on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +101,8 @@ enum Kind {
     Scroll,
     /// Done (on the deck, play ended under it): ignored until it lifts.
     Ignored,
+    /// The Buttons scheme's: the on-screen controls have it.
+    Buttons,
 }
 
 #[derive(Clone, Debug)]
@@ -135,6 +150,10 @@ pub(super) struct TouchControls {
     aim: Option<([f32; 2], Option<Instant>)>,
     /// The field of view of the last frame, for aiming at the finger.
     pub(super) fov: f32,
+    /// The Buttons scheme's controls, when the launcher chose it.
+    buttons: Option<Box<horizon_client::touch::TouchControls>>,
+    /// The launcher's choice has been read.
+    scheme_read: bool,
 }
 
 /// A touch as the mouse: where it is, then a left press or release.
@@ -171,6 +190,109 @@ impl Game<'_> {
     /// The touch controls are on: iOS, or a touch screen seen elsewhere.
     pub(super) fn touch_controls(&self) -> bool {
         cfg!(target_os = "ios") || self.touch.seen
+    }
+
+    /// The touch controls take the crosshair away: the gestures aim at the finger, as do the
+    /// buttons' tap schemes.
+    pub(super) fn touch_hides_crosshair(&self) -> bool {
+        self.touch_controls()
+            && !self.hardware.active()
+            && !self.touch.buttons.as_ref().is_some_and(|b| b.crosshair())
+    }
+
+    /// The Buttons scheme's controls, read with the launcher's choice the first time.
+    fn touch_buttons_load(&mut self) {
+        if self.touch.scheme_read {
+            return;
+        }
+        self.touch.scheme_read = true;
+        if super::launcher::buttons_chosen() {
+            let settings = horizon_client::touch::Settings::load(&layout_path());
+            self.touch.buttons = Some(Box::new(horizon_client::touch::TouchControls::new(
+                settings,
+            )));
+        }
+    }
+
+    /// A key the touch buttons press or let go: a key's name (`key.keyboard.q`) or a key
+    /// mapping's (`action:key.chat`, whatever key it is bound to), as the keyboard sends it.
+    fn touch_key(&mut self, event_loop: &dyn EventLoopCtl, name: &str, down: bool) {
+        let name = match name.strip_prefix("action:") {
+            Some(mapping) => self.settings.keys.get(mapping).to_owned(),
+            None => name.to_owned(),
+        };
+        let Some(window) = self.window.as_ref().map(|w| w.id()) else {
+            return;
+        };
+        let state = if down {
+            ElementState::Pressed
+        } else {
+            ElementState::Released
+        };
+        let mouse = match name.as_str() {
+            "key.mouse.left" => Some(MouseButton::Left),
+            "key.mouse.right" => Some(MouseButton::Right),
+            "key.mouse.middle" => Some(MouseButton::Middle),
+            _ => None,
+        };
+        if let Some(button) = mouse {
+            let event = WindowEvent::MouseInput {
+                device_id: DeviceId::dummy(),
+                state,
+                button,
+            };
+            self.user_window_event(event_loop, window, event);
+            return;
+        }
+        let Some(code) = horizon_client::keybinds::key_code(&name) else {
+            return;
+        };
+        #[cfg(target_os = "ios")]
+        {
+            use winit::keyboard::{Key, NativeKey};
+            let logical = match horizon_ios_input::named_key(code) {
+                Some(named) => Key::Named(named),
+                None => Key::Unidentified(NativeKey::Unidentified),
+            };
+            let event = WindowEvent::KeyboardInput {
+                device_id: DeviceId::dummy(),
+                event: horizon_ios_input::key_event(code, logical, None, state, false),
+                is_synthetic: false,
+            };
+            self.user_window_event(event_loop, window, event);
+        }
+        #[cfg(not(target_os = "ios"))]
+        let _ = (code, state, event_loop);
+    }
+
+    /// What the buttons asked for since the last call: their keys, and the shortcuts' keys.
+    fn touch_buttons_keys(&mut self, event_loop: &dyn EventLoopCtl) {
+        let Some(buttons) = &mut self.touch.buttons else {
+            return;
+        };
+        let mut keys: Vec<(String, bool)> = buttons.key_events();
+        for (asked, name) in [
+            (&mut buttons.chat_requested, "action:key.chat"),
+            (&mut buttons.debug_requested, "key.keyboard.f3"),
+            (
+                &mut buttons.perspective_requested,
+                "action:key.togglePerspective",
+            ),
+        ] {
+            if std::mem::take(asked) {
+                keys.push((name.to_owned(), true));
+                keys.push((name.to_owned(), false));
+            }
+        }
+        // Settings: the game's menu, which has its options.
+        let settings = std::mem::take(&mut buttons.settings_requested);
+        buttons.clicked = false;
+        for (name, down) in keys {
+            self.touch_key(event_loop, &name, down);
+        }
+        if settings {
+            self.touch_tap(Button::Start);
+        }
     }
 
     pub(super) fn touch_playing(&self) -> bool {
@@ -301,6 +423,11 @@ impl Game<'_> {
             };
             let kind = if zone == Some(None) || (on_deck && !self.touch_playing()) {
                 Kind::Ignored
+            } else if self.touch.buttons.is_some() && !on_deck && self.touch_playing() {
+                match self.touch_land_in_play(gui, side) {
+                    Kind::Hotbar => Kind::Hotbar,
+                    _ => Kind::Buttons,
+                }
             } else if on_deck {
                 self.touch_land_on_pad(side)
             } else if self.touch_playing() {
@@ -398,6 +525,29 @@ impl Game<'_> {
                 }
             }
             Kind::Pending => self.touch_pending(&mut finger, ended),
+            Kind::Buttons => {
+                let size = self
+                    .renderer
+                    .as_ref()
+                    .map_or([1, 1], |r| [r.config.width.max(1), r.config.height.max(1)]);
+                let point = [
+                    touch.location.x as f32 / size[0] as f32,
+                    touch.location.y as f32 / size[1] as f32,
+                ];
+                let started = touch.phase == TouchPhase::Started;
+                if let Some(buttons) = &mut self.touch.buttons {
+                    buttons.viewport(size[0], size[1]);
+                    let turn = buttons.update(touch.id, point, started, ended);
+                    let [yaw, pitch] = horizon_client::touch::camera_delta(
+                        turn,
+                        size[0],
+                        size[1],
+                        &buttons.settings,
+                    );
+                    self.touch_look_degrees(yaw, pitch);
+                }
+                self.touch_buttons_keys(event_loop);
+            }
             Kind::Look => self.touch_look(at[0] - last[0], at[1] - last[1]),
             Kind::Jump if ended => self.touch_press(Button::South, false),
             Kind::Crouch if ended => self.touch_press(Button::RightStick, false),
@@ -490,6 +640,14 @@ impl Game<'_> {
             Side::Walk => Kind::Ignored,
             Side::Act => Kind::Pending,
         }
+    }
+
+    /// Turns the view by degrees, as the mouse would at the default sensitivity.
+    fn touch_look_degrees(&mut self, yaw: f32, pitch: f32) {
+        self.touch_look(
+            f64::from(yaw / DEGREES_PER_COUNT) / LOOK_SPEED,
+            f64::from(pitch / DEGREES_PER_COUNT) / LOOK_SPEED,
+        );
     }
 
     fn touch_look(&mut self, dx: f64, dy: f64) {
@@ -588,7 +746,8 @@ impl Game<'_> {
 
     /// Once a frame, before the pads are read: taps let go, a still press starts mining, and
     /// leaving play lets go of everything.
-    pub(super) fn touch_frame(&mut self) {
+    pub(super) fn touch_frame(&mut self, event_loop: &dyn EventLoopCtl) {
+        self.touch_buttons_load();
         for button in std::mem::take(&mut self.touch.releasing) {
             self.touch_press(button, false);
         }
@@ -596,8 +755,16 @@ impl Game<'_> {
         let playing = self.touch_playing();
         if self.touch.was_playing && !playing {
             self.touch_release_all();
+            if let Some(buttons) = &mut self.touch.buttons {
+                buttons.clear();
+            }
+            self.touch_buttons_keys(event_loop);
         }
         self.touch.was_playing = playing;
+        if playing && self.touch.buttons.is_some() {
+            self.touch_buttons_frame();
+            return;
+        }
         if !playing {
             self.touch.inventory_at = None;
             return;
@@ -627,6 +794,39 @@ impl Game<'_> {
         }
     }
 
-    /// The controls draw nothing: the gestures need no buttons or stick to see.
-    pub(super) fn draw_touch_controls(&self, _batch: &mut HudBatch) {}
+    /// The Buttons scheme, once a frame in play: the virtual pad holds what the fingers hold, and
+    /// a tap or a hold on the world aims where it landed.
+    fn touch_buttons_frame(&mut self) {
+        let flying = self.player.as_ref().is_some_and(|p| p.flying);
+        let (w, h) = self.gui_size();
+        let Some(buttons) = &mut self.touch.buttons else {
+            return;
+        };
+        buttons.vertical_movement = flying;
+        let state = buttons.poll_state();
+        let aim = buttons.aim;
+        let tap = buttons.take_tap();
+        *self.pad.touch_mut() = state;
+        if let Some([x, y]) = aim {
+            self.touch.aim = Some(([x * w, y * h], Some(Instant::now() + AIM_LINGER)));
+        }
+        match tap {
+            Some(true) => self.touch_tap(Button::LeftTrigger),
+            Some(false) => self.touch_tap(Button::RightTrigger),
+            None => {}
+        }
+    }
+
+    /// The Buttons scheme's controls over play; the gestures need no buttons or stick to see.
+    pub(super) fn draw_touch_controls(&self, batch: &mut HudBatch) {
+        let Some(buttons) = &self.touch.buttons else {
+            return;
+        };
+        if !self.touch_playing() || self.hardware.active() {
+            return;
+        }
+        horizon_client::touch::draw::controls(batch, &self.gui.atlas, buttons, &|what| {
+            horizon_client::touch::draw::name(buttons, what)
+        });
+    }
 }

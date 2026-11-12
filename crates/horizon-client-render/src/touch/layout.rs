@@ -142,6 +142,33 @@ impl Placement {
     }
 }
 
+/// A button the player added: it holds a key of the keyboard (`key.keyboard.q`, as
+/// `options.txt` names keys) down while touched, or turns it on and off with each touch.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomButton {
+    /// What the button says; empty shows the key's name.
+    pub label: String,
+    pub key: String,
+    pub placement: Placement,
+    /// Each touch turns the key on or off (a held sneak, an auto-walk), instead of holding it.
+    pub toggle: bool,
+}
+
+impl Default for CustomButton {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            key: "key.keyboard.q".into(),
+            placement: Placement::new(0.5, 0.62, 0.11),
+            toggle: false,
+        }
+    }
+}
+
+/// At most this many buttons of the player's own.
+pub const MAX_CUSTOM: usize = 32;
+
 /// `button_visibility` values: follow the scheme, always shown, always hidden.
 pub const FOLLOW_SCHEME: u8 = 0;
 pub const SHOWN: u8 = 1;
@@ -193,6 +220,8 @@ pub struct Settings {
     pub dynamic_area_y: f32,
     /// Scales every control without changing the saved sizes (0.5-2).
     pub button_scale: f32,
+    /// The player's own buttons, drawn over the built-in ones, in every scheme.
+    pub custom: Vec<CustomButton>,
 }
 
 impl Default for Settings {
@@ -239,6 +268,7 @@ impl Default for Settings {
             dynamic_area_x: 0.25,
             dynamic_area_y: 1.0,
             button_scale: 1.0,
+            custom: Vec::new(),
         }
     }
 }
@@ -273,6 +303,11 @@ impl Settings {
         }
         for p in self.layouts.iter_mut().flatten() {
             p.sanitize();
+        }
+        self.custom.truncate(MAX_CUSTOM);
+        for button in &mut self.custom {
+            button.placement.sanitize();
+            button.label = button.label.chars().take(16).collect();
         }
         for v in [
             &mut self.sensitivity,

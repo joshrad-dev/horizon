@@ -1,4 +1,4 @@
-//! On iOS: compiles the SwiftUI deck (`swift/`) into a static library the app links, and gives the
+//! On iOS: compiles the Swift parts (`swift/`: the SwiftUI deck, the launcher's platform half) into a static library the app links, and gives the
 //! main thread a 16 MB stack: iOS gives it 1 MB, and the game's startup overflows that
 //! (`Renderer::new`), more than the 8 MB main thread the desktop systems give.
 use std::path::PathBuf;
@@ -89,7 +89,13 @@ fn main() {
         ),
     ]);
     println!("cargo:rustc-link-arg-bins={clang_rt}");
-    for framework in ["SwiftUI", "UIKit", "Foundation"] {
+    for framework in [
+        "SwiftUI",
+        "UIKit",
+        "Foundation",
+        "Security",
+        "UniformTypeIdentifiers",
+    ] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");

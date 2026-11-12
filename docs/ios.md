@@ -64,6 +64,30 @@ crash reports are in `Documents/Horizon/.horizon`; the Files app shows them.
 Extra arguments for development go after the bundle id:
 `xcrun simctl launch <udid> dev.horizonlab.horizon.ios --world Test --creative`.
 
+## The launcher
+
+The app opens on a launcher (`--launcher`; `horizon-client-render/src/launcher_ui.rs`, run by
+`game/launcher.rs`), over the title while the resources load behind it; the game starts on
+**Play**. Its pages:
+
+- **Account**: Microsoft sign-in with a device code (`msa.rs`, the flow of
+  docs/microsoft-account.md), so servers in online mode let the player in; the tokens go to the
+  Keychain (`swift/Platform.swift`). It needs Horizon's own Azure app: `HORIZON_MSA_CLIENT_ID` at
+  build time (`build_app.sh` passes the environment through) or at run time. A fork registers its
+  own (docs/forking.md); without one the page says sign-in isn't set up, and play is offline.
+- **Controls**: the gestures below, or **on-screen buttons** (`horizon-client-render/src/touch.rs`,
+  adapted from Starling): a joystick or D-pad, jump, sneak, sprint, attack, use, inventory and
+  shortcuts, in four schemes, plus buttons of the player's own that hold or toggle any key. **Edit
+  layout** opens the editor over the title (`touch/editor.rs`): drag a control to move it; the
+  toolbar resizes, fades, hides or shows the picked one, and adds, binds and deletes the player's
+  buttons. The layout is `horizon-touch-layout.json` in the game folder; **Share layout** hands it to
+  the share sheet and **Import** brings one in.
+- **Library**: the game's Mods, Browse mods, Shader packs and Resource packs pages, and **Import**:
+  the document picker brings in a mod (`.hmod`, turned on), a modpack (`.hpack`: its overrides,
+  then its mods from Horizon's registry), a resource or shader pack, a world (a `.zip` with
+  `level.dat`, unpacked into `saves/`) or a layout (`launcher_import.rs`). Nothing in the game
+  folder is replaced.
+
 ## Touch controls
 
 `crates/horizon-client/src/game/touch.rs`: gestures in the manner of the classic Pocket Edition,
@@ -208,6 +232,7 @@ glyphs or menu focus appear for them.
   US layout. Game controllers (`GCController`) aren't read yet.
 - Memory and heat on devices: render distance and the worker count still use desktop defaults;
   watch for the system ending the app (jetsam) on phones with less memory.
+- The launcher: modpacks install into the one game folder (no profiles of their own yet).
 - The narrator (`Unsupported platform ios`), the clipboard (UIPasteboard), Game Center, an app
   icon and a launch screen, an Xcode project for signing and TestFlight.
 - Mods: native code mods are built by the launcher on the desktop; iOS can't load code at run time.

@@ -233,7 +233,7 @@ impl Game<'_> {
         }
         self.deck_frame();
         self.hardware_input(event_loop);
-        self.touch_frame();
+        self.touch_frame(event_loop);
         horizon_client::spans::time("pads", || self.poll_pads(event_loop));
         self.settle_after_run(event_loop);
         self.pause_if_inactive();

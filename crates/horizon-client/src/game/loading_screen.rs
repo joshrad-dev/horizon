@@ -279,6 +279,7 @@ impl Loading {
         };
         let mut batch = HudBatch::new(size);
         self.draw_menu(&mut batch);
+        self.launcher_editor_draw(&mut batch);
         self.menu.frame_drawn((batch.width, batch.height));
         let mut frame = loading_frame(&batch);
         frame.yaw = self.panorama_rotation.update(
@@ -436,6 +437,7 @@ impl ApplicationHandler for App {
         match self {
             // The startup menu takes a finger as the mouse.
             App::Loading(loading) => match event {
+                event if loading.launcher_editor_event(&event) => {}
                 WindowEvent::Touch(touch) => {
                     if super::touch::is_pointer(&touch) {
                         return;

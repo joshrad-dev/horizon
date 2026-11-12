@@ -10,6 +10,8 @@ mod display;
 mod languages;
 #[cfg(target_os = "ios")]
 mod pager;
+#[cfg(target_os = "ios")]
+mod platform;
 
 #[global_allocator]
 static ALLOCATOR: horizon_threads::Allocator = horizon_threads::ALLOCATOR;
@@ -52,6 +54,11 @@ fn main() {
     horizon_client_input::window::install_display_shape(display::shape);
     #[cfg(target_os = "ios")]
     horizon_client_input::window::install_pager(pager::HOST);
+    #[cfg(target_os = "ios")]
+    {
+        horizon_client::launcher_ui::install_platform(&platform::Ios);
+        horizon_client::msa::install_store(&platform::Keychain);
+    }
     // Extra arguments for development: `simctl launch <device> <id> --world Test`. `--deck`
     // lays out iPhone Duo's upright deck at mid-height where the display has no such fold
     // (the Simulator never turns the inner display upright).

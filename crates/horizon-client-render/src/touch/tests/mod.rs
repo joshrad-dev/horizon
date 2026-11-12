@@ -360,3 +360,47 @@ fn a_world_touch_turns_the_camera_only_once_it_drags() {
         [0.0; 2]
     );
 }
+
+#[test]
+fn a_players_button_holds_its_key_or_toggles_it() {
+    let mut t = TouchControls::default();
+    t.viewport(2000, 1000);
+    t.settings.custom = vec![
+        CustomButton {
+            key: "key.keyboard.q".into(),
+            placement: Placement::new(0.5, 0.3, 0.1),
+            ..CustomButton::default()
+        },
+        CustomButton {
+            key: "key.keyboard.left.control".into(),
+            placement: Placement::new(0.5, 0.6, 0.1),
+            toggle: true,
+            ..CustomButton::default()
+        },
+    ];
+    let down = |k: &str| (k.to_owned(), true);
+    let up = |k: &str| (k.to_owned(), false);
+    // Held: down while the finger stays, up when it lifts; the camera doesn't turn.
+    t.update(1, [0.5, 0.3], true, false);
+    assert_eq!(t.update(1, [0.51, 0.31], false, false), [0.0; 2]);
+    assert_eq!(t.key_events(), vec![down("key.keyboard.q")]);
+    t.update(1, [0.51, 0.31], false, true);
+    assert_eq!(t.key_events(), vec![up("key.keyboard.q")]);
+    // Toggled: one touch turns it on, the next off; lifting does nothing.
+    let ctrl = "key.keyboard.left.control";
+    t.update(2, [0.5, 0.6], true, false);
+    t.update(2, [0.5, 0.6], false, true);
+    assert_eq!(t.key_events(), vec![down(ctrl)]);
+    assert!(
+        t.drawn()
+            .iter()
+            .any(|d| d.what == Shown::Custom(1) && d.pressed)
+    );
+    t.update(3, [0.5, 0.6], true, false);
+    t.update(3, [0.5, 0.6], false, true);
+    assert_eq!(t.key_events(), vec![up(ctrl)]);
+    // Leaving play lets go of a toggle left on.
+    t.update(4, [0.5, 0.6], true, false);
+    t.clear();
+    assert_eq!(t.key_events(), vec![down(ctrl), up(ctrl)]);
+}
