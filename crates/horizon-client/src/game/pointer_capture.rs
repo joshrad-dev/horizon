@@ -285,8 +285,13 @@ impl Game<'_> {
             );
         }
         // Outside a run, a window whose grab is the system's holds it exactly while the game
-        // has it grabbed; only a run leaves the two apart.
-        if !self.internal_grab() && self.captured != self.capture_mode.is_some() {
+        // has it grabbed; only a run leaves the two apart. iOS has no system grab (`capture`
+        // keeps it in the game), so there is nothing to follow: re-grabbing each frame would
+        // drop every touch's look as a first move.
+        if !self.internal_grab()
+            && !cfg!(target_os = "ios")
+            && self.captured != self.capture_mode.is_some()
+        {
             let grab = self.captured;
             self.captured = self.capture_mode.is_some();
             self.capture(grab);
