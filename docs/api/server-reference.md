@@ -116,6 +116,7 @@ Any other server.properties key, spelled as vanilla spells it, for example: spaw
 | `resources` | `""` |  | the prepared game files; empty: resources/ here, else the usual places |
 | `restart_on_crash` | `true` |  | start the game again when it crashes |
 | `low_memory` | `false` |  | true: no transparent huge pages, ~60 MB less idle for ~1 % more tick time |
+| `parallel_tick` | `false` |  | true: the server tick shares its work among helper threads (same results) |
 
 ### `[backups]`
 
@@ -157,6 +158,7 @@ A proxy handing players over between servers (docs/server.md). Not vanilla's acc
 | `max_expected` | `64` |  | players waited for at once |
 | `max_freeze_seconds` | `30` |  | the longest a player stays frozen while it is handed over |
 | `max_hold_seconds` | `60` |  | the longest a player arriving from another server is held before it is dropped |
+| `stop_wait_seconds` | `10` |  | a stop with players on waits this long for the proxy to move them out (0 to 60; 0: no wait) |
 
 ### `[discord]`
 

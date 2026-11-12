@@ -1,4 +1,5 @@
 //! A key press while a world is open (`KeyboardHandler.keyPress` and the gameplay mappings).
+use super::inventory_input::drop_whole_stack;
 use super::*;
 
 impl Game<'_> {
@@ -8,6 +9,11 @@ impl Game<'_> {
     /// `Screen.keyPressed` hears the raw one, and only a raw key settles what
     /// the container's hotbar keys are now (`checkHotbarKeyPressed`).
     pub(super) fn key_pressed(&mut self, key: KeyCode, raw: KeyCode) -> Result<()> {
+        self.direct_craft_stop();
+        if self.screen == Screen::Playing && self.replay.playing() {
+            self.studio_key(key);
+            return Ok(());
+        }
         // `CreativeModeInventoryScreen.keyPressed` clears `ignoreTextInput` on
         // every key, before it decides anything.
         self.creative_ignore_text = false;
@@ -24,7 +30,6 @@ impl Game<'_> {
             return Ok(());
         }
         if self.sort_key_press(key)
-            || self.hdr_key_press(key)
             || horizon_client::keybinds::key_name(key)
                 .is_some_and(|name| self.hud_editor_key_press(name))
         {
@@ -40,7 +45,7 @@ impl Game<'_> {
             KeyCode::Escape => match self.screen {
                 Screen::Options => self.options_key(KeyCode::Escape, None)?,
                 Screen::Playing => {
-                    if self.studio_replay.is_some() && self.captured {
+                    if self.replay.playing() && self.captured {
                         self.capture(false);
                         return Ok(());
                     }
@@ -57,6 +62,11 @@ impl Game<'_> {
                     self.capture(true);
                 }
                 Screen::Paused | Screen::Inventory => {
+                    // RecipeBookComponent.keyPressed: a narrow window's open
+                    // book takes Escape to close itself, not the screen.
+                    if self.screen == Screen::Inventory && self.recipe_book_escape() {
+                        return Ok(());
+                    }
                     self.close_container();
                     self.pause_focus = None;
                     self.screen = Screen::Playing;
@@ -85,6 +95,7 @@ impl Game<'_> {
                 Screen::Win => self.close_win_screen()?,
                 Screen::DebugOptions => self.close_debug_options(),
                 Screen::Mod => self.close_mod_screen(),
+                Screen::Studio => self.close_studio_screen(),
                 Screen::HudEditor => self.close_hud_editor(),
             },
             // `checkHotbarKeyPressed`: the keys the controls bind to the off
@@ -140,7 +151,16 @@ impl Game<'_> {
                 // an active use in the same tick.
                 self.release_use_for_keybind_screen();
             }
-            // key.socialInteractions.
+            // key.socialInteractions (Gui.handleKeybinds): only on a server; in single player
+            // the action bar says so, and the narrator.
+            KeyCode::KeyP if self.screen == Screen::Playing && !self.is_multiplayer_server() => {
+                let message = horizon_client::text::Text::translate(
+                    "multiplayer.socialInteractions.not_available",
+                    &[],
+                );
+                self.titles.set_overlay(message.clone(), false);
+                self.say_system_now(&message);
+            }
             KeyCode::KeyP if self.screen == Screen::Playing => {
                 self.open_social(false);
                 self.release_use_for_keybind_screen();
@@ -174,7 +194,7 @@ impl Game<'_> {
             // key.toggleGui is a KeyMapping: it clicks only with no screen open.
             KeyCode::F1 if self.screen == Screen::Playing => self.toggle_hide_gui(),
             KeyCode::F11 => self.toggle_fullscreen(),
-            KeyCode::F5 if self.screen == Screen::Playing && self.studio_replay.is_none() => {
+            KeyCode::F5 if self.screen == Screen::Playing && !self.replay.playing() => {
                 self.cycle_camera()
             }
             KeyCode::KeyE
@@ -240,8 +260,7 @@ impl Game<'_> {
             KeyCode::KeyQ if self.screen == Screen::Playing => {
                 // handleKeybinds: the number keys select before key.drop.
                 self.select_queued_hotbar();
-                let all =
-                    drop_whole_stack(self.modifiers) || std::mem::take(&mut self.pad.drop_stack);
+                let all = drop_whole_stack(self.modifiers) || self.input_takes_stack_drop();
                 self.drop_held(all);
             }
             KeyCode::Digit1

@@ -57,7 +57,7 @@ impl Visbuffer {
         device: &wgpu::Device,
         terrain_layout: &wgpu::BindGroupLayout,
         flat: &Flat,
-        color: wgpu::TextureFormat,
+        (color, linear): (wgpu::TextureFormat, bool),
         constants: &[(&str, f64)],
     ) -> Self {
         let flat_layout = &flat.draw_layout;
@@ -66,12 +66,12 @@ impl Visbuffer {
             .iter()
             .copied()
             .chain([("VIS_BLOCKS_PER_PAGE", blocks_per_page as f64)])
+            .chain(super::linear_blend::frame_constants(color, linear))
             .collect();
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Horizon visibility buffer"),
             source: wgpu::ShaderSource::Wgsl(
-                (include_str!("../terrain.wgsl").to_owned() + include_str!("../visbuffer.wgsl"))
-                    .into(),
+                (super::terrain_shader() + include_str!("../visbuffer.wgsl")).into(),
             ),
         });
         let fragment = wgpu::ShaderStages::FRAGMENT;

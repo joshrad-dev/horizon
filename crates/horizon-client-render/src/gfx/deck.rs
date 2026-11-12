@@ -440,7 +440,7 @@ impl Renderer {
                     &self.device,
                     surface,
                     format,
-                    self.frame_format,
+                    self.output.frame.format,
                     layout,
                 ));
                 self.resize(layout.full[0], layout.game_height.max(1));
