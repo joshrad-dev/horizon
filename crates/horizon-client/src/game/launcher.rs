@@ -189,23 +189,51 @@ impl LauncherHost {
     }
 }
 
-impl Loading {
+/// What hosts the launcher: the startup screen before the game starts, and the game's title
+/// after Quit Game, which goes back to it instead of ending the app.
+pub(super) trait Seat {
+    /// Where the launcher's state is kept while it is up.
+    fn launcher_slot(&mut self) -> &mut Option<LauncherHost>;
+    /// The settings screens the launcher is a page of.
+    fn launcher_ui(&mut self) -> &mut horizon_client::options_ui::OptionsUi;
+    /// Shows the launcher's page.
+    fn show_launcher(&mut self);
+    /// The launcher's page is showing.
+    fn launcher_shown(&self) -> bool;
+    /// Closes it, back to the title.
+    fn hide_launcher(&mut self);
+    fn launcher_mods(&mut self) -> &mut horizon_client::mod_list::ModList;
+    /// The title's resources are ready: Play can go ahead.
+    fn launcher_ready(&self) -> bool;
+    fn launcher_atlas(&self) -> Option<&horizon_client::hud::HudAtlas>;
+    /// The surface's size, in pixels.
+    fn launcher_surface(&self) -> [u32; 2];
+    fn launcher_player_name(&self) -> String;
+    fn set_launcher_player_name(&mut self, name: String);
+    /// Once Play is done the launcher is gone (the game's), or stays to say so (the startup
+    /// screen's, until it hands over).
+    fn drops_launcher_after_play(&self) -> bool;
+    /// Development hooks, once a frame with the launcher up (`HORIZON_LAUNCHER_SHOT`).
+    fn launcher_tested(&mut self, _host: &mut LauncherHost) {}
+
     /// Once a frame while the launcher is up: its view of the game, and what it asked for.
-    pub(super) fn launcher_frame(&mut self) {
-        let Some(mut host) = self.menu.launcher.take() else {
+    fn launcher_frame(&mut self) {
+        let Some(mut host) = self.launcher_slot().take() else {
             return;
         };
         if !host.launched {
             self.launcher_step(&mut host);
         }
-        self.menu.launcher = Some(host);
+        if !(host.launched && self.drops_launcher_after_play()) {
+            *self.launcher_slot() = Some(host);
+        }
     }
 
     fn launcher_step(&mut self, host: &mut LauncherHost) {
         if !host.opened {
             host.opened = true;
-            host.mods = count_mods(&self.settings.mods);
-            self.open_menu_options(Page::Launcher);
+            host.mods = count_mods(self.launcher_mods());
+            self.show_launcher();
         }
         if let Some(restoring) = &host.restoring
             && let Ok(result) = restoring.try_recv()
@@ -223,7 +251,7 @@ impl Loading {
             host.sign_in = None;
         }
         self.launcher_imports(host);
-        for action in self.menu.options.take_launcher_actions() {
+        for action in self.launcher_ui().take_launcher_actions() {
             self.launcher_action(host, action);
         }
         if host.editor.as_ref().is_some_and(|e| e.done) {
@@ -232,68 +260,27 @@ impl Loading {
             {
                 host.notice = Some(e.to_string());
             }
-            self.open_menu_options(Page::Launcher);
-            self.menu.options.show_launcher_page("controls");
+            self.show_launcher();
+            self.launcher_ui().show_launcher_page("controls");
         }
         // Escape on the launcher's own page (its last) is Play too: there is nothing behind it.
-        if !self.menu.options_open && !host.launched && host.editor.is_none() {
+        if !self.launcher_shown() && !host.launched && host.editor.is_none() {
             host.play_waiting = true;
         }
-        if host.play_waiting && self.gui.is_some() {
+        if host.play_waiting && self.launcher_ready() {
             self.launcher_play(host);
             return;
         }
         let state = self.launcher_view(host);
-        *self.menu.options.launcher_state() = state;
-        if self.gui.is_some() {
+        *self.launcher_ui().launcher_state() = state;
+        if self.launcher_ready() {
             host.frames += 1;
-            // `HORIZON_LAUNCHER_SHOT=<png>,editor`: the layout editor.
-            if host.frames == 60
-                && std::env::var("HORIZON_LAUNCHER_SHOT").is_ok_and(|v| v.ends_with(",editor"))
-            {
-                self.launcher_action(host, LauncherAction::EditLayout);
-            }
-            self.launcher_shot(host.frames);
-        }
-    }
-
-    /// `HORIZON_LAUNCHER_SHOT=<png>[,<page>]`, for development: once the launcher has been up
-    /// for a moment, show that page, save a picture of it and quit.
-    fn launcher_shot(&mut self, frames: u32) {
-        let Some(spec) = std::env::var_os("HORIZON_LAUNCHER_SHOT") else {
-            return;
-        };
-        let spec = spec.to_string_lossy().into_owned();
-        let (path, page) = spec.split_once(',').unwrap_or((spec.as_str(), "play"));
-        // `played`: press Play (the log says when the game takes over).
-        if page == "played" {
-            if frames == 60 {
-                self.menu.options.launcher_press_play();
-            }
-            return;
-        }
-        match frames {
-            60 => self.menu.options.show_launcher_page(page),
-            90 => {
-                if let Some(renderer) = &mut self.renderer {
-                    renderer.screenshot = Some(horizon_client::gfx::ScreenshotRequest {
-                        path: path.into(),
-                        size: None,
-                        scaled: false,
-                        background: false,
-                    });
-                }
-            }
-            120 => std::process::exit(0),
-            _ => {}
+            self.launcher_tested(host);
         }
     }
 
     fn launcher_view(&self, host: &LauncherHost) -> launcher_ui::LauncherState {
-        let offline_name = self
-            .options
-            .as_ref()
-            .map_or_else(String::new, Options::player_name);
+        let offline_name = self.launcher_player_name();
         let sign_in = host.sign_in.as_ref().map(|job| {
             let mut view = SignIn::default();
             match &job.last {
@@ -334,7 +321,7 @@ impl Loading {
             loading: if host.importing.is_some() {
                 Some(horizon_client::lang::get("horizon.launcher.import.working"))
             } else {
-                (host.play_waiting && self.gui.is_none())
+                (host.play_waiting && !self.launcher_ready())
                     .then(|| horizon_client::lang::get("horizon.launcher.loading"))
             },
             notice: host.notice.clone(),
@@ -375,8 +362,7 @@ impl Loading {
             LauncherAction::EditLayout => {
                 let settings = horizon_client::touch::Settings::load(&super::touch::layout_path());
                 host.editor = Some(Box::new(Editor::new(settings)));
-                self.menu.options_open = false;
-                self.menu.dragging = false;
+                self.hide_launcher();
             }
             LauncherAction::ResetLayout => {
                 let _ = std::fs::remove_file(super::touch::layout_path());
@@ -404,21 +390,22 @@ impl Loading {
     }
 
     /// The layout editor, drawn over the title while it is open.
-    pub(super) fn launcher_editor_draw(&mut self, batch: &mut horizon_client::hud::HudBatch) {
-        let Some(gui) = &self.gui else {
+    fn launcher_editor_draw(&mut self, batch: &mut horizon_client::hud::HudBatch) {
+        let Some(mut host) = self.launcher_slot().take() else {
             return;
         };
-        if let Some(editor) = self.menu.launcher.as_mut().and_then(|h| h.editor.as_mut()) {
-            editor.draw(batch, &gui.atlas);
+        if let (Some(editor), Some(atlas)) = (host.editor.as_mut(), self.launcher_atlas()) {
+            editor.draw(batch, atlas);
         }
+        *self.launcher_slot() = Some(host);
     }
 
     /// A finger (or the mouse, as finger 0) for the layout editor while it is open: whether it
     /// took the event.
-    pub(super) fn launcher_editor_event(&mut self, event: &winit::event::WindowEvent) -> bool {
+    fn launcher_editor_event(&mut self, event: &winit::event::WindowEvent) -> bool {
         use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
-        let scale = horizon_client::hud::HudBatch::new(self.menu_size()).scale;
-        let Some(host) = self.menu.launcher.as_mut() else {
+        let scale = horizon_client::hud::HudBatch::new(self.launcher_surface()).scale;
+        let Some(host) = self.launcher_slot().as_mut() else {
             return false;
         };
         let Some(editor) = host.editor.as_mut() else {
@@ -473,7 +460,7 @@ impl Loading {
                 lines.push(match result {
                     Imported::Added(name, kind, mods) => {
                         for id in mods {
-                            self.settings.mods.turn_on(&id);
+                            self.launcher_mods().turn_on(&id);
                             turned_on = true;
                         }
                         horizon_client::lang::get("horizon.launcher.import.done")
@@ -492,9 +479,9 @@ impl Loading {
                 });
             }
             if turned_on {
-                self.settings.mods.save(&Game::game_dir());
+                self.launcher_mods().save(&Game::game_dir());
             }
-            host.mods = count_mods(&self.settings.mods);
+            host.mods = count_mods(self.launcher_mods());
             host.notice = Some(lines.join("\n"));
         }
         if host.importing.is_some() {
@@ -525,14 +512,157 @@ impl Loading {
         host.launched = true;
         host.play_waiting = false;
         host.sign_in = None;
-        self.menu.options_open = false;
-        self.menu.dragging = false;
+        self.hide_launcher();
         if let Some(session) = host.session.take() {
-            if let Some(options) = &mut self.options {
-                options.player_name = Some(session.name.clone());
-            }
+            self.set_launcher_player_name(session.name.clone());
             horizon_client::auth::set_current(session);
             horizon_client::auth::prepare_chat_keys(true);
         }
+    }
+}
+
+impl Seat for Loading {
+    fn launcher_slot(&mut self) -> &mut Option<LauncherHost> {
+        &mut self.menu.launcher
+    }
+    fn launcher_ui(&mut self) -> &mut horizon_client::options_ui::OptionsUi {
+        &mut self.menu.options
+    }
+    fn show_launcher(&mut self) {
+        self.open_menu_options(Page::Launcher);
+    }
+    fn launcher_shown(&self) -> bool {
+        self.menu.options_open
+    }
+    fn hide_launcher(&mut self) {
+        self.menu.options_open = false;
+        self.menu.dragging = false;
+    }
+    fn launcher_mods(&mut self) -> &mut horizon_client::mod_list::ModList {
+        &mut self.settings.mods
+    }
+    fn launcher_ready(&self) -> bool {
+        self.gui.is_some()
+    }
+    fn launcher_atlas(&self) -> Option<&horizon_client::hud::HudAtlas> {
+        self.gui.as_ref().map(|gui| &gui.atlas)
+    }
+    fn launcher_surface(&self) -> [u32; 2] {
+        self.menu_size()
+    }
+    fn launcher_player_name(&self) -> String {
+        self.options
+            .as_ref()
+            .map_or_else(String::new, Options::player_name)
+    }
+    fn set_launcher_player_name(&mut self, name: String) {
+        if let Some(options) = &mut self.options {
+            options.player_name = Some(name);
+        }
+    }
+    fn drops_launcher_after_play(&self) -> bool {
+        false
+    }
+    fn launcher_tested(&mut self, host: &mut LauncherHost) {
+        // `HORIZON_LAUNCHER_SHOT=<png>,editor`: the layout editor.
+        if host.frames == 60
+            && std::env::var("HORIZON_LAUNCHER_SHOT").is_ok_and(|v| v.ends_with(",editor"))
+        {
+            self.launcher_action(host, LauncherAction::EditLayout);
+        }
+        self.launcher_shot(host.frames);
+    }
+}
+
+impl Loading {
+    /// `HORIZON_LAUNCHER_SHOT=<png>[,<page>]`, for development: once the launcher has been up
+    /// for a moment, show that page, save a picture of it and quit.
+    fn launcher_shot(&mut self, frames: u32) {
+        let Some(spec) = std::env::var_os("HORIZON_LAUNCHER_SHOT") else {
+            return;
+        };
+        let spec = spec.to_string_lossy().into_owned();
+        let (path, page) = spec.split_once(',').unwrap_or((spec.as_str(), "play"));
+        // `played`: press Play (the log says when the game takes over).
+        if page == "played" {
+            if frames == 60 {
+                self.menu.options.launcher_press_play();
+            }
+            return;
+        }
+        match frames {
+            60 => self.menu.options.show_launcher_page(page),
+            90 => {
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.screenshot = Some(horizon_client::gfx::ScreenshotRequest {
+                        path: path.into(),
+                        size: None,
+                        scaled: false,
+                        background: false,
+                    });
+                }
+            }
+            120 => std::process::exit(0),
+            _ => {}
+        }
+    }
+}
+
+impl Seat for Game<'_> {
+    fn launcher_slot(&mut self) -> &mut Option<LauncherHost> {
+        &mut self.launcher
+    }
+    fn launcher_ui(&mut self) -> &mut horizon_client::options_ui::OptionsUi {
+        &mut self.ui.options
+    }
+    fn show_launcher(&mut self) {
+        self.open_options_at(true, Page::Launcher);
+    }
+    fn launcher_shown(&self) -> bool {
+        self.screen == Screen::Options
+    }
+    fn hide_launcher(&mut self) {
+        self.settings.save(&Self::options_path());
+        self.screen = Screen::Playing;
+        self.dragging = false;
+        // The scheme or the layout may have changed.
+        self.touch_reload_scheme();
+    }
+    fn launcher_mods(&mut self) -> &mut horizon_client::mod_list::ModList {
+        &mut self.settings.mods
+    }
+    fn launcher_ready(&self) -> bool {
+        true
+    }
+    fn launcher_atlas(&self) -> Option<&horizon_client::hud::HudAtlas> {
+        Some(&self.gui.atlas)
+    }
+    fn launcher_surface(&self) -> [u32; 2] {
+        self.renderer
+            .as_ref()
+            .map_or([1280, 720], |r| [r.config.width, r.config.height])
+    }
+    fn launcher_player_name(&self) -> String {
+        self.options.player_name()
+    }
+    fn set_launcher_player_name(&mut self, name: String) {
+        self.options.player_name = Some(name);
+    }
+    fn drops_launcher_after_play(&self) -> bool {
+        true
+    }
+}
+
+impl Game<'_> {
+    /// Quit Game on the title of a game the launcher started (the iOS app): back to the
+    /// launcher, as an app on a phone doesn't end itself. Whether it went there.
+    pub(super) fn quit_to_launcher(&mut self) -> bool {
+        if !self.options.launcher || self.title.is_none() {
+            return false;
+        }
+        if self.launcher.is_none() {
+            self.launcher = Some(LauncherHost::new());
+        }
+        true
     }
 }

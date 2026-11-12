@@ -243,6 +243,16 @@ impl Game<'_> {
         }
     }
 
+    /// The launcher may have changed the scheme or the layout: read them again before the
+    /// next frame in play.
+    pub(super) fn touch_reload_scheme(&mut self) {
+        if let Some(buttons) = &mut self.touch.buttons {
+            buttons.clear();
+        }
+        self.touch.buttons = None;
+        self.touch.scheme_read = false;
+    }
+
     /// A key the touch buttons press or let go: a key's name (`key.keyboard.q`) or a key
     /// mapping's (`action:key.chat`, whatever key it is bound to), as the keyboard sends it.
     fn touch_key(&mut self, event_loop: &dyn EventLoopCtl, name: &str, down: bool) {

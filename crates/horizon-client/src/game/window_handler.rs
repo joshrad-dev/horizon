@@ -233,6 +233,7 @@ impl Game<'_> {
         }
         self.deck_frame();
         self.hardware_input(event_loop);
+        super::launcher::Seat::launcher_frame(self);
         self.touch_frame(event_loop);
         horizon_client::spans::time("pads", || self.poll_pads(event_loop));
         self.settle_after_run(event_loop);
@@ -347,7 +348,12 @@ impl ApplicationHandler for Game<'_> {
                 .renderer
                 .as_ref()
                 .map(|r| [r.config.width, r.config.height]);
-            if let WindowEvent::Touch(touch) = super::touch::into_safe_area(event, surface) {
+            let event = super::touch::into_safe_area(event, surface);
+            // The layout editor, when the launcher has it open, takes every finger.
+            if super::launcher::Seat::launcher_editor_event(self, &event) {
+                return;
+            }
+            if let WindowEvent::Touch(touch) = event {
                 self.touch_event(event_loop, id, touch);
             }
             return;
@@ -395,6 +401,9 @@ impl Game<'_> {
             .as_ref()
             .map(|r| [r.config.width, r.config.height]);
         let event = super::touch::into_safe_area(event, surface);
+        if super::launcher::Seat::launcher_editor_event(self, &event) {
+            return;
+        }
         let key = if self.window.as_ref().is_some_and(|w| w.id() == id)
             && !self.scripted_run()
             && let WindowEvent::KeyboardInput {

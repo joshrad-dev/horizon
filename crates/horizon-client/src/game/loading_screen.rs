@@ -1,6 +1,7 @@
 //! The loading screen while the resources load (`Loading`), the window's app before the game
 //! takes over (`App`), and the checks a start makes first: missing or damaged prepared files,
 //! an unclean last exit, a fullscreen the window system could not show.
+use super::launcher::Seat as _;
 use super::*;
 
 /// The window system ended the event loop with a failure (on Linux, a compositor dropping the

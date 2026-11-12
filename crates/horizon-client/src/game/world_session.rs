@@ -24,6 +24,8 @@ impl Game<'_> {
         match action {
             // A splitscreen player's title never ends the process (P1's does).
             Action::Quit if self.options.split_guest => {}
+            // The launcher's game goes back to the launcher (the iOS app).
+            Action::Quit if self.quit_to_launcher() => {}
             Action::Quit => event_loop.exit(),
             Action::Options => self.open_options(true),
             Action::Accessibility => {

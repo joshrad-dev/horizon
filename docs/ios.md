@@ -68,7 +68,8 @@ Extra arguments for development go after the bundle id:
 
 The app opens on a launcher (`--launcher`; `horizon-client-render/src/launcher_ui.rs`, run by
 `game/launcher.rs`), over the title while the resources load behind it; the game starts on
-**Play**. Its pages:
+**Play**. **Quit Game** on the title comes back to it instead of ending the app (a phone app
+doesn't end itself); the scheme and layout chosen there apply when it closes. Its pages:
 
 - **Account**: Microsoft sign-in with a device code (`msa.rs`, the flow of
   docs/microsoft-account.md), so servers in online mode let the player in; the tokens go to the

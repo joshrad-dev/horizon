@@ -2287,6 +2287,8 @@ struct Game<'a> {
     split_window: bool,
     /// This view's corner in its shared window; cursor warps include the offset.
     view_at: [u32; 2],
+    /// The launcher, back over the title after Quit Game (game/launcher.rs).
+    launcher: Option<launcher::LauncherHost>,
     /// Splitscreen: what it draws over this player's view (its badge, questions, notices).
     split_hud: split::Hud,
     /// Splitscreen: this player's own Microsoft account session (one of the launcher's other
@@ -5854,6 +5856,7 @@ impl Game<'_> {
             .draw(self.settings.horizon.overlay, &mut batch, &self.gui.atlas);
         self.draw_pad_over_hud(&mut batch);
         self.draw_touch_controls(&mut batch);
+        launcher::Seat::launcher_editor_draw(self, &mut batch);
         batch
     }
     fn hud_layers(&mut self, size: [u32; 2]) -> HudBatch {
@@ -11509,6 +11512,7 @@ impl<'a> Game<'a> {
             keyboard_mouse: true,
             split_window: false,
             view_at: [0, 0],
+            launcher: None,
             split_hud: Default::default(),
             split_auth: None,
             focused: true,
